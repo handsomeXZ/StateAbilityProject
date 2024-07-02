@@ -1,0 +1,30 @@
+{
+	"FileVersion": 3,
+	"EngineAssociation": "{6C50D70B-41AD-FAAF-9F3B-8D9AA159F915}",
+	"Category": "",
+	"Description": "",
+	"Modules": [
+		{
+			"Name": "StateAbilityProject",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "ModelingToolsEditorMode",
+			"Enabled": true,
+			"TargetAllowList": [
+				"Editor"
+			]
+		},
+		{
+			"Name": "MoverExamples",
+			"Enabled": true
+		},
+		{
+			"Name": "Mover",
+			"Enabled": true
+		}
+	]
+}
