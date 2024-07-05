@@ -16,8 +16,8 @@ UENUM()
 enum class ECommandFrameNetChannelState : uint8
 {
 	Unkown,
-	Normal,
-	WaitCatch,
+	Normal,		// 正常
+	WaitCatch,	// Server等待Client追赶
 };
 
 /**
@@ -56,12 +56,12 @@ private:
 	UCommandFrameManager* GetCommandFrameManager();
 
 	//////////////////////////////////////////////////////////////////////////
-	// 处理数据包前缀
+	// 处理数据包前缀（只要收到数据就处理，不保证有序）
 	void ProcessDeltaPrefix(const FCommandFrameDeltaNetPacket& DeltaNetPacket, FBitReader& BitReader);
 	void ResetCommandFrame(uint32 ServerCommandFrame, uint32 PrevServerCommandFrame);
 
 	//////////////////////////////////////////////////////////////////////////
-	// 处理数据包主体
+	// 处理数据包主体（仅处理有序的数据包）
 	void ProcessDeltaPackaged(const FCommandFrameDeltaNetPacket& DeltaNetPacket, FBitReader& BitReader);
 
 	//////////////////////////////////////////////////////////////////////////
@@ -80,4 +80,11 @@ private:
 
 	UPROPERTY(Transient)
 	UCommandFrameManager* CFrameManager;
+
+	//////////////////////////////////////////////////////////////////////////
+	//DECLARE_DELEGATE_OneParam()
+	//TMap<EDeltaNetPacketType, >
+
+
+	//////////////////////////////////////////////////////////////////////////
 };

@@ -10,7 +10,7 @@
 
 PRIVATE_DEFINE(APlayerController, TArray<TWeakObjectPtr<UInputComponent>>, CurrentInputStack)
 
-DEFINE_LOG_CATEGORY_STATIC(LogCommandFrameManager, Log, All)
+DEFINE_LOG_CATEGORY_STATIC(LogCommandFrameManager, Log, Verbose)
 
 const uint32 UCommandFrameManager::MIN_COMMANDFRAME_NUM = 4;
 const uint32 UCommandFrameManager::MAX_COMMANDFRAME_NUM = 32;
@@ -18,14 +18,19 @@ const uint32 UCommandFrameManager::MAX_SNAPSHOTBUFFER_NUM = 32;
 
 const float UCommandFrameManager::FixedFrameRate = 30.0f;
 
+// 统一以秒（s）为时间单位
+
 //////////////////////////////////////////////////////////////////////////
 // FCommandFrameTickFunction
 
 void FCommandFrameTickFunction::ExecuteTick(float DeltaTime, enum ELevelTick TickType, ENamedThreads::Type CurrentThread, const FGraphEventRef& MyCompletionGraphEvent)
 {
+	UE_LOG(LogCommandFrameManager, Verbose, TEXT("TickFunction ExecuteTick"));
+
 	check(Target);
 	if (IsValid(Target))
 	{
+		UE_LOG(LogCommandFrameManager, Verbose, TEXT("TickFunction FlushCommandFrame"));
 		Target->FlushCommandFrame(DeltaTime);
 	}
 }
@@ -46,7 +51,8 @@ FName FCommandFrameTickFunction::DiagnosticContext(bool bDetailed)
 UCommandFrameManager::UCommandFrameManager()
 	: Super()
 	, FixedDeltaTime(0.0f)
-	, AccumulationTime(0.0f)
+	, AccumulateDeltaTime(0.0f)
+	, LastFixedUpdateTime(0.0)
 	, CommandBuffer(MAX_COMMANDFRAME_NUM)
 	, AttributeSnapshotBuffer(MAX_SNAPSHOTBUFFER_NUM)
 	, TimeDilationHelper(10, MIN_COMMANDFRAME_NUM, MAX_COMMANDFRAME_NUM, FixedFrameRate)
@@ -93,6 +99,8 @@ void UCommandFrameManager::Initialize(FSubsystemCollectionBase& Collection)
 
 void UCommandFrameManager::Deinitialize()
 {
+	UE_LOG(LogCommandFrameManager, Verbose, TEXT("CommandFrameManager Deinitialize"));
+
 	if (CommandFrameTickFunction.IsTickFunctionRegistered())
 	{
 		CommandFrameTickFunction.UnRegisterTickFunction();
@@ -134,6 +142,8 @@ void UCommandFrameManager::SetupCommandFrameTickFunction()
 	UWorld* LoadedWorld = GetWorld();
 	UGameInstance* GameInstance = LoadedWorld->GetGameInstance();
 
+	UE_LOG(LogCommandFrameManager, Verbose, TEXT("CommandFrameManager SetupCommandFrameTickFunction"));
+
 	if (!CommandFrameTickFunction.IsTickFunctionRegistered())
 	{
 		CommandFrameTickFunction.bCanEverTick = true;
@@ -145,22 +155,39 @@ void UCommandFrameManager::SetupCommandFrameTickFunction()
 
 		CommandFrameTickFunction.bHighPriority = true;
 		CommandFrameTickFunction.bStartWithTickEnabled = true;
+		CommandFrameTickFunction.bAllowTickOnDedicatedServer = true;
 
 		CommandFrameTickFunction.TickInterval = 0;
 
 		MaxFixedFrameNum = 4;
 		FixedDeltaTime = 1.0 / FixedFrameRate;
+
+		LastFixedUpdateTime = FPlatformTime::Seconds();
 	}
 }
 
 void UCommandFrameManager::FlushCommandFrame(float DeltaTime)
 {
-	AccumulationTime += DeltaTime;
+	float RealDeltaTime = (float)(FPlatformTime::Seconds() - LastFixedUpdateTime);
+
+	AccumulateDeltaTime += RealDeltaTime * TimeDilationHelper.GetCurTimeDilation();
+	LastFixedUpdateTime = FPlatformTime::Seconds();
+
+	UE_LOG(LogCommandFrameManager, Log, TEXT("FlushCommandFrame DeltaTime[%f] AccumulateDeltaTime[%f] CurTime[%f]"), DeltaTime, AccumulateDeltaTime, LastFixedUpdateTime);
+
 	uint32 Num = 1;
-	while (Num++ <= MaxFixedFrameNum && AccumulationTime > FixedDeltaTime)
+	while (AccumulateDeltaTime > FixedDeltaTime && Num++ <= MaxFixedFrameNum)
 	{
-		AccumulationTime -= FixedDeltaTime;
+		AccumulateDeltaTime -= FixedDeltaTime;
+		UE_LOG(LogCommandFrameManager, Log, TEXT("FlushCommandFrame_Fixed"));
 		FlushCommandFrame_Fixed(FixedDeltaTime);
+	}
+
+	if (Num > MaxFixedFrameNum)
+	{
+		// 避免雪崩，重置时间。
+		AccumulateDeltaTime = 0.0f;
+		UE_LOG(LogCommandFrameManager, Warning, TEXT("GameThread is taking too long. In order to prevent a cascade effect, it has been forcefully halted. Please pay attention to optimization!"));
 	}
 }
 
@@ -311,11 +338,17 @@ void UCommandFrameManager::ClientSendInputNetPacket()
 		return;
 	}
 
-	UE_LOG(LogCommandFrameManager, Log, TEXT("Waiting to send InputNetPacket Frame[%d]"), RealCommandFrame);
+	UE_LOG(LogCommandFrameManager, Verbose, TEXT("Waiting to send InputNetPacket Frame[%d]"), RealCommandFrame);
 
 	TCircularQueueView<FCommandFrameInputFrame> RangeView = CommandBuffer.ReadRangeData_Shrink(RealCommandFrame, CommandBuffer.Count());
 	FCommandFrameInputNetPacket InputNetPacket(RangeView);
 	LocalNetChannel->ClientSend_CommandFrameInputNetPacket(InputNetPacket);
+}
+
+void UCommandFrameManager::ClientReceiveCommandAck(uint32 ServerCommandFrame)
+{
+	// 仅对输入缓冲区进行标记Ack
+	CommandBuffer.AckData(ServerCommandFrame);
 }
 
 void UCommandFrameManager::ResetCommandFrame(uint32 CommandFrame)

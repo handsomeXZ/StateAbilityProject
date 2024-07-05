@@ -72,6 +72,8 @@ public:
 
 	}
 
+	float GetCurTimeDilation() { return CurTimeDilation; }
+
 
 private:
 	void AdjustClientTimeDilation(UWorld* World, float TimeDilation);
@@ -84,5 +86,5 @@ private:
 	ETimeDilationAdaptStage TimeDilationAdaptStage;
 	float CurTimeDilation;
 	float AccumulatedStableSeconds;
-	int32 LastServerCommandBufferNum;
+	float LastServerCommandBufferNum;
 };

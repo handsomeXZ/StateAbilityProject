@@ -2,14 +2,16 @@
 
 #include "Engine/PackageMapClient.h"
 #include "Engine/NetConnection.h"
+#include "GameFramework/PlayerState.h"
 
 #include "Buffer/BufferTypes.h"
-#include "Net/Packet/CommandFrameInput.h"
 #include "CommandFrameManager.h"
+#include "Net/Packet/CommandFrameInput.h"
+#include "Net/CommandFrameNetChannel.h"
 
-DEFINE_LOG_CATEGORY_STATIC(LogCommandFrameNetPacket, Log, All)
+DEFINE_LOG_CATEGORY_STATIC(LogCommandFrameNetPacket, Log, Verbose)
 
-PRIVATE_DEFINE_NAMESPACE(FBitReader, Pos, FCommandFrameInputNetPacket)
+PRIVATE_DEFINE_NAMESPACE(FCommandFrameInputNetPacket, FBitReader, Pos)
 
 struct FBitArchiveSizeScope
 {
@@ -80,6 +82,15 @@ namespace DeltaNetPacketUtils
 
 //////////////////////////////////////////////////////////////////////////
 // FCommandFrameDeltaNetPacket
+FCommandFrameDeltaNetPacket::FCommandFrameDeltaNetPacket()
+	: ServerCommandFrame(0)
+	, PrevServerCommandFrame(0)
+	, Channel(nullptr)
+	, PacketType(EDeltaNetPacketType::None)
+{
+
+}
+
 FCommandFrameDeltaNetPacket::FCommandFrameDeltaNetPacket(uint32 InServerCommandFrame, uint32 InPrevServerCommandFrame, EDeltaNetPacketType InPacketType, ACommandFrameNetChannel* InChannel)
 	: ServerCommandFrame(InServerCommandFrame)
 	, PrevServerCommandFrame(InPrevServerCommandFrame)
@@ -229,9 +240,9 @@ void FCommandFrameInputNetPacket::WriteRedundantData(TCircularQueueView<FCommand
 	// FNetBitWriter
 	RawData.Empty();
 
-	UE_LOG(LogCommandFrameNetPacket, Log, TEXT("WriteRedundantData Begin"));
+	UE_LOG(LogCommandFrameNetPacket, Verbose, TEXT("WriteRedundantData Begin"));
 
-	UE_LOG(LogCommandFrameNetPacket, Log, TEXT("WriteRedundantData FramesCount[%d]"), InputFrames.Num());
+	UE_LOG(LogCommandFrameNetPacket, Verbose, TEXT("WriteRedundantData FramesCount[%d]"), InputFrames.Num());
 
 	int64 TotalNumBits = 0;
 	for (int32 Index = InputFrames.Num() - 1; Index >= 0; --Index)
@@ -255,12 +266,12 @@ void FCommandFrameInputNetPacket::WriteRedundantData(TCircularQueueView<FCommand
 				BitWriter.SerializeBits(InputFrame.InputQueue.GetData(), InputFrame.InputQueue.GetTypeSize() * DataCount);
 			}
 
-			UE_LOG(LogCommandFrameNetPacket, Log, TEXT("WriteRedundantData Frame[%d] DataCount[%d] DataSize[%d]"), InputFrame.CommandFrame, DataCount, DataSize);
+			UE_LOG(LogCommandFrameNetPacket, Verbose, TEXT("WriteRedundantData Frame[%d] DataCount[%d] DataSize[%d]"), InputFrame.CommandFrame, DataCount, DataSize);
 		}
 		TotalNumBits += BitWriter.GetNumBits();
 	}
 
-	UE_LOG(LogCommandFrameNetPacket, Log, TEXT("WriteRedundantData Allocate RawData[%d]"), TotalNumBits);
+	UE_LOG(LogCommandFrameNetPacket, Verbose, TEXT("WriteRedundantData Allocate RawData[%d]"), TotalNumBits);
 	RawData.SetNumUninitialized(TotalNumBits);
 
 	check(RawData.Num() >= TotalNumBits);
@@ -277,7 +288,7 @@ void FCommandFrameInputNetPacket::WriteRedundantData(TCircularQueueView<FCommand
 		DataStream += NumBytes;
 	}
 
-	UE_LOG(LogCommandFrameNetPacket, Log, TEXT("WriteRedundantData End"));
+	UE_LOG(LogCommandFrameNetPacket, Verbose, TEXT("WriteRedundantData End"));
 }
 
 void FCommandFrameInputNetPacket::ReadRedundantData(TFunction<FCommandFrameInputAtom * (uint32 CommandFrame, int32 DataCount)> AllocateData) const
@@ -287,8 +298,8 @@ void FCommandFrameInputNetPacket::ReadRedundantData(TFunction<FCommandFrameInput
 
 	bool bPaused = false;
 
-	UE_LOG(LogCommandFrameNetPacket, Log, TEXT("ReadRedundantData Begin"));
-	UE_LOG(LogCommandFrameNetPacket, Log, TEXT("ReadRedundantData DataTotalSize[%d]"), RawData.Num());
+	UE_LOG(LogCommandFrameNetPacket, Verbose, TEXT("ReadRedundantData Begin"));
+	UE_LOG(LogCommandFrameNetPacket, Verbose, TEXT("ReadRedundantData DataTotalSize[%d]"), RawData.Num());
 
 	while (!Ar.AtEnd() && !bPaused)
 	{
@@ -301,7 +312,7 @@ void FCommandFrameInputNetPacket::ReadRedundantData(TFunction<FCommandFrameInput
 
 		FBitArchiveSizeScope Scope(Ar, DataSize);
 
-		UE_LOG(LogCommandFrameNetPacket, Log, TEXT("ReadRedundantData CF[%d] DataCount[%d] DataSize[%d]"), CommandFrame, DataCount, DataSize);
+		UE_LOG(LogCommandFrameNetPacket, Verbose, TEXT("ReadRedundantData CF[%d] DataCount[%d] DataSize[%d]"), CommandFrame, DataCount, DataSize);
 
 		FCommandFrameInputAtom* InputAtomData = AllocateData(CommandFrame, DataCount);
 		if (InputAtomData)
@@ -314,10 +325,10 @@ void FCommandFrameInputNetPacket::ReadRedundantData(TFunction<FCommandFrameInput
 		}
 		else
 		{
-			PRIVATE_GET_NAMESPACE(&Ar, Pos, FCommandFrameInputNetPacket) = Ar.GetPosBits() + DataSize;
+			PRIVATE_GET_NAMESPACE(FCommandFrameInputNetPacket, &Ar, Pos) = Ar.GetPosBits() + DataSize;
 		}
 		
 	}
 
-	UE_LOG(LogCommandFrameNetPacket, Log, TEXT("ReadRedundantData End"));
+	UE_LOG(LogCommandFrameNetPacket, Verbose, TEXT("ReadRedundantData End"));
 }

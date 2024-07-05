@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "InputActionValue.h"
+#include "EnhancedInputComponent.h"
 #include "GameFramework/OnlineReplStructs.h"
 
 #include "Buffer/BufferTypes.h"
@@ -88,7 +89,8 @@ public:
 	// Tick
 	uint32 MaxFixedFrameNum;
 	float FixedDeltaTime;
-	float AccumulationTime;
+	float AccumulateDeltaTime;
+	double LastFixedUpdateTime;
 	FCommandFrameTickFunction CommandFrameTickFunction;
 	FTimerHandle LoadedWorldHandle;
 
@@ -109,6 +111,7 @@ public:
 	APlayerController* GetLocalPlayerController();
 	void UpdateLocalHistoricalData();
 	void ClientSendInputNetPacket();
+	void ClientReceiveCommandAck(uint32 ServerCommandFrame);
 
 	TJOwnerShipCircularQueue<FCommandFrameAttributeSnapshot, UScriptStruct*, uint8*> AttributeSnapshotBuffer;
 

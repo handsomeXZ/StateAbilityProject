@@ -33,7 +33,8 @@ enum class ECommandInputActionGroup : uint8
 };
 
 /**
- * All players input subsystem
+ * All players input subsystem.
+ * DedicatedServer 不会创建
  * 
  * 必须遵守的约定：	配置的InputAction仅被用于帧同步。
  */
@@ -161,12 +162,15 @@ public:
 // Action event delegate execution by signature.
 
 
-UCLASS()
+UCLASS(BlueprintType, meta = (BlueprintSpawnableComponent))
 class STATEABILITYSCRIPTRUNTIME_API UCommandEnhancedInputComponent
 	: public UEnhancedInputComponent
 {
 	GENERATED_BODY()
+
+	PRIVATE_DECLARE_FUNC_NAMESPACE(APawn, void, SetupPlayerInputComponent, UInputComponent*);
 public:
+	virtual void BeginPlay() override;
 	/** Removes all action bindings. */
 	virtual void ClearActionBindings() override;
 

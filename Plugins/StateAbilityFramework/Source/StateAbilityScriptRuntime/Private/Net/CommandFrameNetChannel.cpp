@@ -2,10 +2,11 @@
 
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
+#include "CommandFrameManager.h"
 
-DEFINE_LOG_CATEGORY_STATIC(LogCommandFrameNetChannel, Log, All)
+DEFINE_LOG_CATEGORY_STATIC(LogCommandFrameNetChannel, Log, Verbose)
 
-PRIVATE_DEFINE_NAMESPACE(FBitReader, Pos, ACommandFrameNetChannel)
+PRIVATE_DEFINE_NAMESPACE(ACommandFrameNetChannel, FBitReader, Pos)
 
 ACommandFrameNetChannel::ACommandFrameNetChannel(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -60,7 +61,7 @@ void ACommandFrameNetChannel::ServerReceive_CommandFrameInputNetPacket_Implement
 {
 	if (IsValid(GetCommandFrameManager()))
 	{
-		UE_LOG(LogCommandFrameNetChannel, Log, TEXT("CommandFrameNetChannel[%s] has Received Input"), *GetName());
+		UE_LOG(LogCommandFrameNetChannel, Verbose, TEXT("CommandFrameNetChannel[%s] has Received Input"), *GetName());
 
 		APlayerController* PC = GetOwner<APlayerController>();
 		APlayerState* PS = PC->GetPlayerState<APlayerState>();
@@ -74,6 +75,8 @@ void ACommandFrameNetChannel::ServerReceive_CommandFrameInputNetPacket_Implement
 		uint32 CommandBufferNum = GetCommandFrameManager()->GetCurCommandBufferNum(PS->GetUniqueId());
 		if (NetChannelState == ECommandFrameNetChannelState::Normal && InputNetPacket.ClientCommandFrame < RCF && CommandBufferNum == 0)
 		{
+			UE_LOG(LogCommandFrameNetChannel, Warning, TEXT("Server Wait Client Catch!!"));
+
 			NetChannelState = ECommandFrameNetChannelState::WaitCatch;
 
 			FCommandFrameDeltaNetPacket Packet;
@@ -102,7 +105,7 @@ void ACommandFrameNetChannel::ClientReceive_CommandFrameDeltaNetPacket_Implement
 		return;
 	}
 
-	UE_LOG(LogCommandFrameNetChannel, Log, TEXT("ClientReceive SCF[%d] Prev[%d] LocalLast[%d]"), DeltaNetPacket.ServerCommandFrame, DeltaNetPacket.PrevServerCommandFrame, LastServerCommandFrame);
+	UE_LOG(LogCommandFrameNetChannel, Verbose, TEXT("ClientReceive SCF[%d] Prev[%d] LocalLast[%d]"), DeltaNetPacket.ServerCommandFrame, DeltaNetPacket.PrevServerCommandFrame, LastServerCommandFrame);
 	
 	FBitReader BitReader;
 	BitReader.SetData((uint8*)DeltaNetPacket.RawData.GetData(), DeltaNetPacket.RawData.Num());
@@ -148,15 +151,20 @@ void ACommandFrameNetChannel::ProcessDeltaPrefix(const FCommandFrameDeltaNetPack
 		GetCommandFrameManager()->UpdateTimeDilationHelper(ServerCommandBufferNum, bFault);
 	}
 
-	PRIVATE_GET_NAMESPACE(&BitReader, Pos, ACommandFrameNetChannel) = 0;
+	PRIVATE_GET_NAMESPACE(ACommandFrameNetChannel, &BitReader, Pos) = 0;
 }
 
 void ACommandFrameNetChannel::ProcessDeltaPackaged(const FCommandFrameDeltaNetPacket& DeltaNetPacket, FBitReader& BitReader)
 {
-	UE_LOG(LogCommandFrameNetChannel, Log, TEXT("Change LocalLast From[%d] To[%d]"), LastServerCommandFrame, DeltaNetPacket.ServerCommandFrame);
+	UE_LOG(LogCommandFrameNetChannel, Verbose, TEXT("Change LocalLast From[%d] To[%d]"), LastServerCommandFrame, DeltaNetPacket.ServerCommandFrame);
 	LastServerCommandFrame = DeltaNetPacket.ServerCommandFrame;
 	
 	// 处理数据
+	if (DeltaNetPacket.bLocal && IsValid(GetCommandFrameManager()))
+	{
+		UE_LOG(LogCommandFrameNetChannel, Verbose, TEXT("ClientReceiveCommandAck[%d]"), DeltaNetPacket.ServerCommandFrame);
+		GetCommandFrameManager()->ClientReceiveCommandAck(DeltaNetPacket.ServerCommandFrame);
+	}
 
 
 	// 处理乱序包

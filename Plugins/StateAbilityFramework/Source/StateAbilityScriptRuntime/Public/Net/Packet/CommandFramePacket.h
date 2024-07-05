@@ -5,7 +5,9 @@
 #include "CoreMinimal.h"
 
 #include "Containers/BitArray.h"
+
 #include "PrivateAccessor.h"
+#include "Buffer/CircularQueueCore.h"
 
 #include "CommandFramePacket.generated.h"
 
@@ -14,6 +16,7 @@
 #endif
 
 struct FCommandFrameInputFrame;
+struct FCommandFrameInputAtom;
 class ACommandFrameNetChannel;
 
 
@@ -71,7 +74,7 @@ struct FCommandFrameDeltaNetPacket
 {
 	GENERATED_BODY()
 public:
-	FCommandFrameDeltaNetPacket() {}
+	FCommandFrameDeltaNetPacket();
 	FCommandFrameDeltaNetPacket(uint32 InServerCommandFrame, uint32 InPrevServerCommandFrame, EDeltaNetPacketType InPacketType, ACommandFrameNetChannel* InChannel);
 
 	bool NetSerialize(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess);

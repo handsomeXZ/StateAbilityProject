@@ -62,6 +62,9 @@ void FTimeDilationHelper::Update(UWorld* WorldContext, uint32 ServerInputBufferN
 
 	if (TimeDilationAdaptStage == ETimeDilationAdaptStage::Default && (ServerInputBufferNum == 0 || bFault))
 	{
+		UE_LOG(LogTimeDilationHelper, Log, TEXT("ServerInputBufferNum[%d] bFault[%s]"), ServerInputBufferNum, bFault ? TEXT("true") : TEXT("false"));
+
+
 		TimeDilationAdaptStage = ETimeDilationAdaptStage::Dilate;
 		AdjustClientTimeDilation(WorldContext, TargetTimeDilation + TimeDilationMag);
 
@@ -74,17 +77,31 @@ void FTimeDilationHelper::Update(UWorld* WorldContext, uint32 ServerInputBufferN
 void FTimeDilationHelper::FixedTick(UWorld* WorldContext, float DeltaTime)
 {
 	float LocalPing = GetLocalPing(WorldContext);
+
 	if (LocalPing <= FLOAT_NORMAL_THRESH)
 	{
 		return;
 	}
 
+	const UEnum* Enum = StaticEnum<ETimeDilationAdaptStage>();
+	UE_LOG(LogTimeDilationHelper, Log, TEXT("LocalPing[%f] LastServerCommandBufferNum[%f] State[%s]"), LocalPing, LastServerCommandBufferNum, *(Enum->GetNameStringByValue((int64)TimeDilationAdaptStage)));
+
 	switch (TimeDilationAdaptStage)
 	{
-	case ETimeDilationAdaptStage::Default: break;
+	case ETimeDilationAdaptStage::Default: 
+	{
+		if (LastServerCommandBufferNum <= FLOAT_NORMAL_THRESH)
+		{
+			// We predict it will reach Max and wait to see if it is stable.
+			TimeDilationAdaptStage = ETimeDilationAdaptStage::Dilate;
+			AdjustClientTimeDilation(WorldContext, TargetTimeDilation + TimeDilationMag);
+		}
 
+		break;
+	}
 	case ETimeDilationAdaptStage::Dilate:
 	{
+		LastServerCommandBufferNum += FixedFrameRate * DeltaTime;
 		if (LastServerCommandBufferNum + GetPredictedBufferNumDelta(LocalPing) >= MaxCommandBufferNum)
 		{
 			// We predict it will reach Max and wait to see if it is stable.
@@ -96,7 +113,7 @@ void FTimeDilationHelper::FixedTick(UWorld* WorldContext, float DeltaTime)
 	}
 	case ETimeDilationAdaptStage::PredictMax:
 	{
-		if (LastServerCommandBufferNum >= MaxCommandBufferNum)
+		//if (LastServerCommandBufferNum >= MaxCommandBufferNum)
 		{
 			// If the Buffer can still reach Max without frame number compensation
 			// the Buffer begins to accumulate stability time for shrinking
@@ -132,8 +149,7 @@ void FTimeDilationHelper::FixedTick(UWorld* WorldContext, float DeltaTime)
 	}
 	case ETimeDilationAdaptStage::Shrink:
 	{
-		// @TODO：暂时不进行收缩，后续需要完善一下
-
+		LastServerCommandBufferNum -= FixedFrameRate * DeltaTime;
 		if (LastServerCommandBufferNum - GetPredictedBufferNumDelta(LocalPing) <= MinCommandBufferNum)
 		{
 			TimeDilationAdaptStage = ETimeDilationAdaptStage::Default;
@@ -152,7 +168,7 @@ void FTimeDilationHelper::AdjustClientTimeDilation(UWorld* World, float TimeDila
 	if (AWorldSettings* WorldSettings = World->GetWorldSettings())
 	{
 		// 注意区分 DemoPlayTimeDilation、CinematicTimeDilation、TimeDilation
-		WorldSettings->DemoPlayTimeDilation = TimeDilation;
+		//WorldSettings->DemoPlayTimeDilation = TimeDilation;
 		WorldSettings->SetTimeDilation(TimeDilation);
 		CurTimeDilation = World->GetWorldSettings()->GetEffectiveTimeDilation();
 
@@ -164,8 +180,7 @@ int32 FTimeDilationHelper::GetPredictedBufferNumDelta(float LocalPing)
 	// 预测未来整个RTT的服务器的缓冲区的大小变化，因为从客户端收到服务器最新数据，到服务器接到客户端最新的Input，是一个完整的RTT
 	double PredictedDelta = (LocalPing * 0.001) * FixedFrameRate * FMath::Abs(CurTimeDilation - TargetTimeDilation);
 
-	const UEnum* Enum = StaticEnum<ETimeDilationAdaptStage>();
-	UE_LOG(LogTimeDilationHelper, Log, TEXT("PredictedBufferNumDelta[%f] State[%s]"), PredictedDelta, *(Enum->GetNameStringByValue((int64)TimeDilationAdaptStage)));
+	UE_LOG(LogTimeDilationHelper, Log, TEXT("LastServerCommandBufferNum[%f] PredictedBufferNumDelta[%f]"), LastServerCommandBufferNum, PredictedDelta);
 
 	// 进1取整
 	return PredictedDelta + 0.5;

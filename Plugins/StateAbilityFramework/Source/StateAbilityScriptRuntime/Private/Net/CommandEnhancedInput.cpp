@@ -3,8 +3,11 @@
 #include "InputAction.h"
 #include "InputMappingContext.h"
 #include "EnhancedInputSubsystems.h"
+#include "Engine/InputDelegateBinding.h"
 
 #include "CommandFrameSetting.h"
+
+PRIVATE_DEFINE_FUNC_NAMESPACE(UCommandEnhancedInputComponent, APawn, void, SetupPlayerInputComponent, UInputComponent*);
 
 bool UCommandEnhancedInputSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 {
@@ -13,8 +16,12 @@ bool UCommandEnhancedInputSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 		return false;
 	}
 
+#if !UE_SERVER
 	// Getting setting on whether to turn off subsystem or not
 	const bool bShouldCreate = GetDefault<UCommandFrameSettings>()->bEnableCommandFrameNetReplication;
+#else
+	const bool bShouldCreate = false;
+#endif
 
 	return bShouldCreate && Super::ShouldCreateSubsystem(Outer);
 }
@@ -197,6 +204,27 @@ const TArray<FCommandFrameInputAtom>& FCommandEnhancedInputFilter::GetInputData(
 
 //////////////////////////////////////////////////////////////////////////
 // UCommandEnhancedInputComponent
+void UCommandEnhancedInputComponent::BeginPlay()
+{
+	Super::BeginPlay();
+
+	APawn* Owner = GetOwner<APawn>();
+	if (!IsValid(Owner))
+	{
+		return;
+	}
+
+	PRIVATE_GET_FUNC_NAMESPACE(UCommandEnhancedInputComponent, Owner, SetupPlayerInputComponent)(this);
+
+	RegisterComponent();
+
+	if (UInputDelegateBinding::SupportsInputDelegate(Owner->GetClass()))
+	{
+		bBlockInput = Owner->bBlockInput;
+		UInputDelegateBinding::BindInputDelegatesWithSubojects(Owner, this);
+	}
+}
+
 void UCommandEnhancedInputComponent::ClearActionBindings()
 {
 	Super::ClearActionBindings();
