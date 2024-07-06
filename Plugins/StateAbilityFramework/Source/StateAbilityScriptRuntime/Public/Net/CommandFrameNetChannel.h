@@ -4,7 +4,8 @@
 
 #include "CoreMinimal.h"
 
-#include "GameFramework/Info.h"
+#include "Net/CommandFrameNetTypes.h"
+
 #include "Net/Packet/CommandFramePacket.h"
 #include "PrivateAccessor.h"
 
@@ -21,30 +22,30 @@ enum class ECommandFrameNetChannelState : uint8
 };
 
 /**
- * 负责每个玩家的命令帧网络同步。
- * 之所以要单独实现这么一个类，主要是为了避免SubObject网络同步的开销。
+ * 通用CFrameNetChannel，支持的同步：Movement、StateAbilityScript。
  * 
  * @TODO：需要考虑AOI优化
  */
 UCLASS()
-class ACommandFrameNetChannel : public AInfo
+class ADefaultCommandFrameNetChannel : public ACommandFrameNetChannelBase
 {
 	GENERATED_UCLASS_BODY()
 
 	PRIVATE_DECLARE_NAMESPACE(FBitReader, int64, Pos)
-
+	friend struct FCommandFrameDeltaNetPacket;
 public:
 	//virtual bool IsNetRelevantFor(const AActor* RealViewer, const AActor* ViewTarget, const FVector& SrcLocation) const override;
 	virtual void BeginPlay() override;
 
-	void FixedTick(float DeltaTime, uint32 RCF, uint32 ICF);
-
-	void Register(UCommandFrameManager* CommandFrameManager) { CFrameManager = CommandFrameManager; }
+	virtual void FixedTick(float DeltaTime, uint32 RCF, uint32 ICF) override;
+	virtual void RegisterCFrameManager(UCommandFrameManager* CommandFrameManager) override { CFrameManager = CommandFrameManager; }
 	
-	void ClientSend_CommandFrameInputNetPacket(FCommandFrameInputNetPacket& InputNetPacket);
-	void ServerSend_CommandFrameDeltaNetPacket(FCommandFrameDeltaNetPacket& DeltaNetPacket);
+	virtual void ClientSend_CommandFrameInputNetPacket(FCommandFrameInputNetPacket& InputNetPacket) override;
+	virtual void ServerSend_CommandFrameDeltaNetPacket(FCommandFrameDeltaNetPacket& DeltaNetPacket) override;
 
-	uint32 GetLastServerCommandFrame() { return LastServerCommandFrame; }
+	virtual uint32 GetLastServerCommandFrame() override { return LastServerCommandFrame; }
+	virtual ICommandFrameNetProcedure* GetNetPacketProcedure(EDeltaNetPacketType NetPacketType) override;
+	virtual void RegisterNetPacketProcedure(EDeltaNetPacketType NetPacketType, UObject* Procedure) override;
 private:
 
 	UFUNCTION(Server, Unreliable)
@@ -82,9 +83,17 @@ private:
 	UCommandFrameManager* CFrameManager;
 
 	//////////////////////////////////////////////////////////////////////////
-	//DECLARE_DELEGATE_OneParam()
-	//TMap<EDeltaNetPacketType, >
+	TMap<EDeltaNetPacketType, TWeakObjectPtr<UObject>> NetPacketProcedures;
 
 
 	//////////////////////////////////////////////////////////////////////////
 };
+
+namespace DeltaNetPacketUtils
+{
+	template<>
+	void NetSerialize<EDeltaNetPacketType::Movement>(FCommandFrameDeltaNetPacket& NetPacket, FArchive& Ar, UPackageMap* Map, bool& bOutSuccess);
+
+	template<>
+	void NetSerialize<EDeltaNetPacketType::StateAbilityScript>(FCommandFrameDeltaNetPacket& NetPacket, FArchive& Ar, UPackageMap* Map, bool& bOutSuccess);
+}

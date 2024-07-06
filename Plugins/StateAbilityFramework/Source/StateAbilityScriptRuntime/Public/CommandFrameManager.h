@@ -15,7 +15,7 @@
 
 #include "CommandFrameManager.generated.h"
 
-class ACommandFrameNetChannel;
+class ACommandFrameNetChannelBase;
 struct FCommandFrameInputNetPacket;
 
 /**
@@ -83,7 +83,7 @@ public:
 	// Player
 	void PostLogin(AGameModeBase* GameMode, APlayerController* PC);
 	void LoginOut(AGameModeBase* GameMode, AController* PC);
-	void RegisterClientChannel(ACommandFrameNetChannel* Channel);
+	void RegisterClientChannel(ACommandFrameNetChannelBase* Channel);
 
 
 	// Tick
@@ -138,7 +138,7 @@ private:
 	uint32 InternalCommandFrame;	// InternalCommandFrame 可能随回滚和重新模拟而变化。
 
 	UPROPERTY()
-	TObjectPtr<ACommandFrameNetChannel> LocalNetChannel;
+	TObjectPtr<ACommandFrameNetChannelBase> LocalNetChannel;
 	UPROPERTY()
-	TMap<AController*, ACommandFrameNetChannel*> NetChannels;
+	TMap<AController*, ACommandFrameNetChannelBase*> NetChannels;
 };

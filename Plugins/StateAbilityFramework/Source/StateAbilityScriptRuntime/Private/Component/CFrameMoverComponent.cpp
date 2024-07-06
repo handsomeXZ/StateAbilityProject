@@ -2,6 +2,7 @@
 
 #include "GameFramework/PhysicsVolume.h"
 
+#include "CommandFrameManager.h"
 #include "Component/Mover/CFrameMovementMode.h"
 #include "Component/Mover/CFrameMoveModeStateMachine.h"
 
@@ -191,6 +192,14 @@ void UCFrameMoverComponent::OnHandleImpact(const FHitResult& Hit, const FName Mo
 {
 	// TODO: Handle physics impacts here - ie when player runs into box, impart force onto box
 	// 可以参考 UCharacterMovementComponent::HandleImpact
+}
+
+void UCFrameMoverComponent::OnNetSync(FNetProcedureSyncParam& SyncParam)
+{
+	if (SyncParam.Ar.IsSaving())
+	{
+		//SyncParam.Ar << 
+	}
 }
 
 FVector UCFrameMoverComponent::GetGravityAcceleration() const

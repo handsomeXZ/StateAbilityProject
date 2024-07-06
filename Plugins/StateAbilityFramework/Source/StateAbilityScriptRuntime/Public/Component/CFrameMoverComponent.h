@@ -4,6 +4,9 @@
 
 #include "CoreMinimal.h"
 
+#include "Net/CommandFrameNetTypes.h"
+#include "Component/Mover/CFrameMovementContext.h"
+
 #include "CFrameMoverComponent.generated.h"
 
 class UCFrameMovementMode;
@@ -12,7 +15,7 @@ class UCommandFrameManager;
 class UCFrameMoveModeStateMachine;
 
 UCLASS(BlueprintType, meta = (BlueprintSpawnableComponent))
-class STATEABILITYSCRIPTRUNTIME_API UCFrameMoverComponent : public UActorComponent
+class STATEABILITYSCRIPTRUNTIME_API UCFrameMoverComponent : public UActorComponent, public ICommandFrameNetProcedure
 {
 	GENERATED_BODY()
 
@@ -29,6 +32,10 @@ public:
 
 	virtual void FixedTick(float DeltaTime, uint32 RCF, uint32 ICF);
 	virtual void OnHandleImpact(const FHitResult& Hit, const FName ModeName, const FVector& MoveDelta);
+
+	// ICommandFrameNetProcedure
+	virtual void OnNetSync(FNetProcedureSyncParam& SyncParam) override;
+	// ~ICommandFrameNetProcedure
 
 	void HandleImpact(const FHitResult& Hit, const FName ModeName = NAME_None, const FVector& MoveDelta = FVector::ZeroVector);
 public:

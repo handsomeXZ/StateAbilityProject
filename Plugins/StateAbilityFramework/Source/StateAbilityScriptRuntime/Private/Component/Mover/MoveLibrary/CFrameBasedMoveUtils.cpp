@@ -4,6 +4,98 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogCFrameBasedMove, Log, All)
 
+void FCFrameRelativeBaseInfo::Clear()
+{
+	MovementBase = nullptr;
+	BoneName = NAME_None;
+	Location = FVector::ZeroVector;
+	Rotation = FQuat::Identity;
+	ContactLocalPosition = FVector::ZeroVector;
+}
+
+bool FCFrameRelativeBaseInfo::HasRelativeInfo() const
+{
+	return MovementBase != nullptr;
+}
+
+bool FCFrameRelativeBaseInfo::UsesSameBase(const FCFrameRelativeBaseInfo& Other) const
+{
+	return UsesSameBase(Other.MovementBase.Get(), Other.BoneName);
+}
+
+bool FCFrameRelativeBaseInfo::UsesSameBase(const UPrimitiveComponent* OtherComp, FName OtherBoneName) const
+{
+	return HasRelativeInfo()
+		&& (MovementBase == OtherComp)
+		&& (BoneName == OtherBoneName);
+}
+
+void FCFrameRelativeBaseInfo::SetFromFloorResult(const FFloorCheckResult& FloorTestResult)
+{
+	bool bDidSucceed = false;
+
+	if (FloorTestResult.bWalkableFloor)
+	{
+		MovementBase = FloorTestResult.HitResult.GetComponent();
+
+		if (MovementBase.IsValid())
+		{
+			BoneName = FloorTestResult.HitResult.BoneName;
+
+			if (FCFrameBasedMoveUtils::GetMovementBaseTransform(MovementBase.Get(), BoneName, OUT Location, OUT Rotation) &&
+				FCFrameBasedMoveUtils::TransformWorldLocationToBased(MovementBase.Get(), BoneName, FloorTestResult.HitResult.ImpactPoint, OUT ContactLocalPosition))
+			{
+				bDidSucceed = true;
+			}
+		}
+	}
+
+	if (!bDidSucceed)
+	{
+		Clear();
+	}
+}
+
+void FCFrameRelativeBaseInfo::SetFromComponent(UPrimitiveComponent* InRelativeComp, FName InBoneName)
+{
+	bool bDidSucceed = false;
+
+	MovementBase = InRelativeComp;
+
+	if (MovementBase.IsValid())
+	{
+		BoneName = InBoneName;
+		bDidSucceed = FCFrameBasedMoveUtils::GetMovementBaseTransform(MovementBase.Get(), BoneName, /*out*/Location, /*out*/Rotation);
+	}
+
+	if (!bDidSucceed)
+	{
+		Clear();
+	}
+}
+
+
+FString FCFrameRelativeBaseInfo::ToString() const
+{
+	if (MovementBase.IsValid())
+	{
+		return FString::Printf(TEXT("Base: %s, Loc: %s, Rot: %s, LocalContact: %s"),
+			*GetNameSafe(MovementBase->GetOwner()),
+			*Location.ToCompactString(),
+			*Rotation.Rotator().ToCompactString(),
+			*ContactLocalPosition.ToCompactString());
+	}
+
+	return FString(TEXT("Base: NULL"));
+}
+
+//////////////////////////////////////////////////////////////////////////
+
+bool FCFrameBasedMoveUtils::IsADynamicBase(const UPrimitiveComponent* MovementBase)
+{
+	return (MovementBase && MovementBase->Mobility == EComponentMobility::Movable);
+}
+
 bool FCFrameBasedMoveUtils::GetMovementBaseTransform(const UPrimitiveComponent* MovementBase, const FName BoneName, FVector& OutLocation, FQuat& OutQuat)
 {
 	if (MovementBase)
@@ -68,4 +160,42 @@ void FCFrameBasedMoveUtils::TransformDirectionToWorld(FQuat BaseQuat, FVector Lo
 void FCFrameBasedMoveUtils::TransformDirectionToLocal(FQuat BaseQuat, FVector WorldSpaceDirection, FVector& OutLocalDirection)
 {
 	OutLocalDirection = BaseQuat.UnrotateVector(WorldSpaceDirection);
+}
+
+bool FCFrameBasedMoveUtils::TransformBasedLocationToWorld(const UPrimitiveComponent* MovementBase, const FName BoneName, FVector LocalLocation, FVector& OutLocationWorldSpace)
+{
+	FVector BaseLocation;
+	FQuat BaseQuat;
+
+	if (GetMovementBaseTransform(MovementBase, BoneName, /*out*/ BaseLocation, /*out*/ BaseQuat))
+	{
+		TransformLocationToWorld(BaseLocation, BaseQuat, LocalLocation, OutLocationWorldSpace);
+		return true;
+	}
+
+	return false;
+}
+
+
+bool FCFrameBasedMoveUtils::TransformWorldLocationToBased(const UPrimitiveComponent* MovementBase, const FName BoneName, FVector WorldSpaceLocation, FVector& OutLocalLocation)
+{
+	FVector BaseLocation;
+	FQuat BaseQuat;
+	if (GetMovementBaseTransform(MovementBase, BoneName, /*out*/ BaseLocation, /*out*/ BaseQuat))
+	{
+		TransformLocationToLocal(BaseLocation, BaseQuat, WorldSpaceLocation, OutLocalLocation);
+		return true;
+	}
+
+	return false;
+}
+
+void FCFrameBasedMoveUtils::TransformLocationToWorld(FVector BasePos, FQuat BaseQuat, FVector LocalLocation, FVector& OutLocationWorldSpace)
+{
+	OutLocationWorldSpace = FTransform(BaseQuat, BasePos).TransformPositionNoScale(LocalLocation);
+}
+
+void FCFrameBasedMoveUtils::TransformLocationToLocal(FVector BasePos, FQuat BaseQuat, FVector WorldSpaceLocation, FVector& OutLocalLocation)
+{
+	OutLocalLocation = FTransform(BaseQuat, BasePos).InverseTransformPositionNoScale(WorldSpaceLocation);
 }

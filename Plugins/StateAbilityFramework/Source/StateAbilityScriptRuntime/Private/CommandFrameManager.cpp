@@ -6,6 +6,9 @@
 
 #include "CommandFrameSetting.h"
 #include "Net/CommandEnhancedInput.h"
+#include "Net/CommandFrameNetTypes.h"
+
+// @TODO: Manager本身不应该直接使用这个
 #include "Net/CommandFrameNetChannel.h"
 
 PRIVATE_DEFINE(APlayerController, TArray<TWeakObjectPtr<UInputComponent>>, CurrentInputStack)
@@ -560,7 +563,7 @@ void UCommandFrameManager::PostLogin(AGameModeBase* GameMode, APlayerController*
 {
 	if (GetWorld()->GetAuthGameMode() == GameMode)
 	{
-		if (ACommandFrameNetChannel** ChannelPtr = NetChannels.Find(PC))
+		if (ACommandFrameNetChannelBase** ChannelPtr = NetChannels.Find(PC))
 		{
 			// 重新指向新的Owner
 			(*ChannelPtr)->SetOwner(PC);
@@ -569,8 +572,10 @@ void UCommandFrameManager::PostLogin(AGameModeBase* GameMode, APlayerController*
 		{
 			FActorSpawnParameters Param;
 			Param.Owner = PC;
-			ACommandFrameNetChannel* Channel = GetWorld()->SpawnActor<ACommandFrameNetChannel>(Param);
-			Channel->Register(this);
+
+			// @TODO：默认直接创建通用的ADefaultCommandFrameNetChannel，后续可以改为可配置...
+			ACommandFrameNetChannelBase* Channel = GetWorld()->SpawnActor<ADefaultCommandFrameNetChannel>(Param);
+			Channel->RegisterCFrameManager(this);
 			Channel->SetOwner(PC);
 
 			NetChannels.Add(PC, Channel);
@@ -591,7 +596,7 @@ void UCommandFrameManager::LoginOut(AGameModeBase* GameMode, AController* PC)
 	}
 }
 
-void UCommandFrameManager::RegisterClientChannel(ACommandFrameNetChannel* Channel)
+void UCommandFrameManager::RegisterClientChannel(ACommandFrameNetChannelBase* Channel)
 {
 	APlayerController* PC = Cast<APlayerController>(Channel->GetOwner());
 	if (PC)

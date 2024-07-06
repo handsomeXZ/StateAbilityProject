@@ -5,6 +5,8 @@
 #include "CoreMinimal.h"
 
 #include "Component/Mover/CFrameMovementMode.h"
+#include "Component/Mover/MoveLibrary/CFrameMovementUtils.h"
+#include "Component/Mover/MoveLibrary/CFrameBasedMoveUtils.h"
 
 #include "CFrameWalkingMode.generated.h"
 
@@ -20,7 +22,6 @@ public:
 	virtual void OnUnregistered() override;
 	virtual void GenerateMove(FCFrameMovementContext& Context, FCFrameProposedMove& OutProposedMove) override;
 	virtual void Execute(FCFrameMovementContext& Context) override;
-	virtual void SerializeSnapShot(FArchive& Ar, TArray<UObject>& ObjectPool) override;
 
 	virtual void SetupInputComponent(UInputComponent* InInputComponent) override;
 
@@ -28,7 +29,10 @@ protected:
 	void OnMoveTriggered(const FInputActionValue& Value);
 	void OnMoveCompleted(const FInputActionValue& Value);
 
+	void CaptureFinalState(FCFrameMovementContext& Context, bool bDidAttemptMovement, const FFloorCheckResult& FloorResult);
+
 	FVector ConsumeControlInputVector();
+	FCFrameRelativeBaseInfo UpdateFloorAndBaseInfo(FCFrameMovementContext& Context, const FFloorCheckResult& FloorResult) const;
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Input)
 	TObjectPtr<UInputAction> IA_Move;

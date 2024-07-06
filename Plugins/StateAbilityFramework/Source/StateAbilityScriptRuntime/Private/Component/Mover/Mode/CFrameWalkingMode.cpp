@@ -4,9 +4,12 @@
 #include "InputAction.h"
 
 #include "Net/CommandEnhancedInput.h"
+#include "Component/CFrameMoverComponent.h"
 #include "Component/Mover/CFrameMovementContext.h"
-#include "Component/Mover/CFrameMoveStateProvider.h"
+#include "Component/Mover/CFrameMoveStateAdapter.h"
+#include "Component/Mover/MoveLibrary/CFrameMovementUtils.h"
 #include "Component/Mover/MoveLibrary/CFrameGroundMoveUtils.h"
+#include "Component/Mover/MoveLibrary/CFrameBasedMoveUtils.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogCFrameWalkingMode, Log, All)
 
@@ -22,10 +25,10 @@ void UCFrameWalkingMode::OnUnregistered()
 
 void UCFrameWalkingMode::GenerateMove(FCFrameMovementContext& Context, FCFrameProposedMove& OutProposedMove)
 {
-	UCFrameMoverComponent* MoverComp = GetMoverComp();
-	UCFrameMoveStateProvider* MoveStateProvider = MoverComp->GetMovementConfig().MoveStateProvider;
-	UPrimitiveComponent* MovementBase = MoveStateProvider->GetMovementBase();
-	FName MovementBaseBoneName = MoveStateProvider->GetMovementBaseBoneName();
+	UCFrameMoverComponent* MoverComp = Context.MoverComp;
+	UCFrameMoveStateAdapter* MoveStateAdapter = Context.MoveStateAdapter;
+	UPrimitiveComponent* MovementBase = MoveStateAdapter->GetMovementBase();
+	FName MovementBaseBoneName = MoveStateAdapter->GetMovementBaseBoneName();
 
 	FVector FrameInputVector = ConsumeControlInputVector();
 
@@ -47,7 +50,7 @@ void UCFrameWalkingMode::GenerateMove(FCFrameMovementContext& Context, FCFramePr
 		else
 		{
 			// set intent to the the control rotation - often a player's camera rotation
-			OrientationIntent = MoveStateProvider->GetControlRotation().Vector();
+			OrientationIntent = MoveStateAdapter->GetControlRotation().Vector();
 		}
 
 		LastAffirmativeMoveInput = FrameInputVector;
@@ -79,11 +82,11 @@ void UCFrameWalkingMode::GenerateMove(FCFrameMovementContext& Context, FCFramePr
 	}
 
 	//////////////////////////////////////////////////////////////////////////
-
+	FFloorCheckResult LastFloorResult;
 	FVector MovementNormal;
-	if (Context.LastFloorResult.IsWalkableFloor())
+	if (Context.GetPersistentData(CFrameContextDataKey::LastFloorResult, LastFloorResult) && LastFloorResult.IsWalkableFloor())
 	{
-		MovementNormal = Context.LastFloorResult.HitResult.ImpactNormal;
+		MovementNormal = LastFloorResult.HitResult.ImpactNormal;
 	}
 	else
 	{
@@ -96,7 +99,7 @@ void UCFrameWalkingMode::GenerateMove(FCFrameMovementContext& Context, FCFramePr
 	// 如果输入没有intent改变orientation，使用当前的Orientation
 	if (FrameInputVector.IsNearlyZero() || OrientationIntent.IsNearlyZero())
 	{
-		IntendedOrientation_WorldSpace = MoveStateProvider->GetOrientation_WorldSpace();
+		IntendedOrientation_WorldSpace = MoveStateAdapter->GetOrientation_WorldSpace();
 	}
 	else if(bUseBaseRelativeMovement && MovementBase)
 	{
@@ -119,8 +122,8 @@ void UCFrameWalkingMode::GenerateMove(FCFrameMovementContext& Context, FCFramePr
 	Params.MoveInput = FrameInputVector;
 
 	Params.OrientationIntent = IntendedOrientation_WorldSpace;
-	Params.PriorVelocity = FVector::VectorPlaneProject(MoveStateProvider->GetVelocity_WorldSpace(), MovementNormal);
-	Params.PriorOrientation = MoveStateProvider->GetOrientation_WorldSpace();
+	Params.PriorVelocity = FVector::VectorPlaneProject(MoveStateAdapter->GetVelocity_WorldSpace(), MovementNormal);
+	Params.PriorOrientation = MoveStateAdapter->GetOrientation_WorldSpace();
 	Params.GroundNormal = MovementNormal;
 	Params.TurningRate = TurningRate;
 	Params.TurningBoost = TurningBoost;
@@ -163,10 +166,10 @@ void UCFrameWalkingMode::GenerateMove(FCFrameMovementContext& Context, FCFramePr
 void UCFrameWalkingMode::Execute(FCFrameMovementContext& Context)
 {
 
-	UCFrameMoverComponent* MoverComp = GetMoverComp();
-	USceneComponent* UpdatedComponent = MoverComp->GetUpdatedComponent();
-	UPrimitiveComponent* UpdatedPrimitive = MoverComp->GetPrimitiveComponent();
-	UCFrameMoveStateProvider* MoveStateProvider = MoverComp->GetMovementConfig().MoveStateProvider;
+	UCFrameMoverComponent* MoverComp = Context.MoverComp;
+	USceneComponent* UpdatedComponent = Context.UpdatedComponent;
+	UPrimitiveComponent* UpdatedPrimitive = Context.UpdatedPrimitive;
+	UCFrameMoveStateAdapter* MoveStateAdapter = Context.MoveStateAdapter;
 	FCFrameProposedMove ProposedMove = Context.CombinedMove;
 
 	if (ProposedMove.LinearVelocity.IsNearlyZero() && ProposedMove.AngularVelocity.IsNearlyZero())
@@ -182,15 +185,19 @@ void UCFrameWalkingMode::Execute(FCFrameMovementContext& Context)
 
 	//////////////////////////////////////////////////////////////////////////
 
-	FFloorCheckResult CurrentFloor = Context.LastFloorResult;
+	FFloorCheckResult CurrentFloor;
 
-	UFloorQueryUtils::FindFloor(UpdatedComponent, UpdatedPrimitive,
-		FloorSweepDistance, MaxWalkSlopeCosine,
-		UpdatedPrimitive->GetComponentLocation(), CurrentFloor);
+	// If we don't have cached floor information, we need to search for it again
+	if (!Context.GetPersistentData(CFrameContextDataKey::LastFloorResult, CurrentFloor))
+	{
+		UFloorQueryUtils::FindFloor(UpdatedComponent, UpdatedPrimitive,
+			FloorSweepDistance, MaxWalkSlopeCosine,
+			UpdatedPrimitive->GetComponentLocation(), CurrentFloor);
+	}
 
 	//////////////////////////////////////////////////////////////////////////
 
-	const FRotator StartingOrient = MoveStateProvider->GetOrientation_WorldSpace();
+	const FRotator StartingOrient = MoveStateAdapter->GetOrientation_WorldSpace();
 	FRotator TargetOrient = StartingOrient;
 
 	bool bIsOrientationChanging = false;
@@ -295,10 +302,7 @@ void UCFrameWalkingMode::Execute(FCFrameMovementContext& Context)
 		if (!CurrentFloor.IsWalkableFloor() && !CurrentFloor.HitResult.bStartPenetrating)
 		{
 			// No floor or not walkable, so let's let the airborne movement mode deal with it
-			// @TODO: record there not walkable
-			// 
-			//OutputState.MovementEndState.NextModeName = AirMovementModeName;
-			//OutputState.MovementEndState.RemainingMs = Params.TimeStep.StepMs - (Params.TimeStep.StepMs * PercentTimeAppliedSoFar);
+			CaptureFinalState(Context, bDidAttemptMovement, CurrentFloor);
 			return;
 		}
 	}
@@ -326,19 +330,13 @@ void UCFrameWalkingMode::Execute(FCFrameMovementContext& Context)
 		if (!CurrentFloor.IsWalkableFloor() && !Hit.bStartPenetrating)
 		{
 			// No floor or not walkable, so let's let the airborne movement mode deal with it
-			// @TODO: record there not walkable
-			// 
-			//OutputState.MovementEndState.NextModeName = AirMovementModeName;
-			//OutputState.MovementEndState.RemainingMs = Params.TimeStep.StepMs;
+			CaptureFinalState(Context, bDidAttemptMovement, CurrentFloor);
 			return;
 		}
 	}
 
-}
+	CaptureFinalState(Context, bDidAttemptMovement, CurrentFloor);
 
-void UCFrameWalkingMode::SerializeSnapShot(FArchive& Ar, TArray<UObject>& ObjectPool)
-{
-	Super::SerializeSnapShot(Ar, ObjectPool);
 }
 
 void UCFrameWalkingMode::SetupInputComponent(UInputComponent* InInputComponent)
@@ -360,8 +358,8 @@ void UCFrameWalkingMode::SetupInputComponent(UInputComponent* InInputComponent)
 void UCFrameWalkingMode::OnMoveTriggered(const FInputActionValue& Value)
 {
 	UCFrameMoverComponent* MoverComp = GetMoverComp();
-	UCFrameMoveStateProvider* MoveStateProvider = MoverComp->GetMovementConfig().MoveStateProvider;
-	FRotator Rotator = MoveStateProvider->GetControlRotation();
+	UCFrameMoveStateAdapter* MoveStateAdapter = MoverComp->GetMovementConfig().MoveStateAdapter;
+	FRotator Rotator = MoveStateAdapter->GetControlRotation();
 	{
 		// UKismetMathLibrary::GetRightVector
 		FVector WorldDirection = FRotationMatrix(FRotator(Rotator.Pitch, 0, Rotator.Roll)).GetScaledAxis(EAxis::Y);
@@ -381,9 +379,59 @@ void UCFrameWalkingMode::OnMoveCompleted(const FInputActionValue& Value)
 	ControlInputVector = FVector::ZeroVector;
 }
 
+void UCFrameWalkingMode::CaptureFinalState(FCFrameMovementContext& Context, bool bDidAttemptMovement, const FFloorCheckResult& FloorResult)
+{
+	Context.MoveStateAdapter->UpdateMoveFrame();
+
+	FCFrameRelativeBaseInfo PriorBaseInfo;
+	const bool bHasPriorBaseInfo = Context.GetPersistentData(CFrameContextDataKey::LastFoundDynamicMovementBase, PriorBaseInfo);
+
+	FCFrameRelativeBaseInfo CurrentBaseInfo = UpdateFloorAndBaseInfo(Context, FloorResult);
+
+	// If we're on a dynamic base and we're not trying to move, keep using the same relative actor location. This prevents slow relative 
+	//  drifting that can occur from repeated floor sampling as the base moves through the world.
+	if (CurrentBaseInfo.HasRelativeInfo() && bHasPriorBaseInfo && !bDidAttemptMovement
+		&& PriorBaseInfo.UsesSameBase(CurrentBaseInfo))
+	{
+		CurrentBaseInfo.ContactLocalPosition = PriorBaseInfo.ContactLocalPosition;
+	}
+
+	// TODO: Update Main/large movement record with substeps from our local record
+
+	if (CurrentBaseInfo.HasRelativeInfo())
+	{
+		Context.SetPersistentData(CFrameContextDataKey::LastFoundDynamicMovementBase, CurrentBaseInfo);
+
+		Context.MoveStateAdapter->SetMovementBase(CurrentBaseInfo.MovementBase.Get(), CurrentBaseInfo.BoneName);
+	}
+	else
+	{
+		Context.InvalidPersistentData(CFrameContextDataKey::LastFoundDynamicMovementBase);
+
+		// no movement base
+		Context.MoveStateAdapter->SetMovementBase(nullptr, NAME_None);
+	}
+
+	Context.UpdatedComponent->ComponentVelocity = Context.MoveStateAdapter->GetVelocity_WorldSpace();
+}
+
 FVector UCFrameWalkingMode::ConsumeControlInputVector()
 {
 	FVector Result = ControlInputVector;
 	ControlInputVector = FVector::ZeroVector;
 	return Result;
+}
+
+FCFrameRelativeBaseInfo UCFrameWalkingMode::UpdateFloorAndBaseInfo(FCFrameMovementContext& Context, const FFloorCheckResult& FloorResult) const
+{
+	FCFrameRelativeBaseInfo ReturnBaseInfo;
+
+	Context.SetPersistentData(CFrameContextDataKey::LastFloorResult, FloorResult);
+
+	if (FloorResult.IsWalkableFloor() && FCFrameBasedMoveUtils::IsADynamicBase(FloorResult.HitResult.GetComponent()))
+	{
+		ReturnBaseInfo.SetFromFloorResult(FloorResult);
+	}
+
+	return ReturnBaseInfo;
 }

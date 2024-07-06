@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 
-#include "CFrameMoveStateProvider.generated.h"
+#include "CFrameMoveStateAdapter.generated.h"
 
 class UCFrameMoverComponent;
 
@@ -13,15 +13,16 @@ class UCFrameMoverComponent;
  * 封装了获取各种移动状态信息的方法。
  */
 UCLASS(Abstract, Blueprintable, BlueprintType, EditInlineNew)
-class STATEABILITYSCRIPTRUNTIME_API UCFrameMoveStateProvider : public UObject
+class STATEABILITYSCRIPTRUNTIME_API UCFrameMoveStateAdapter : public UObject
 {
 	GENERATED_BODY()
 public:
-	UCFrameMoveStateProvider();
+	UCFrameMoveStateAdapter();
 
 	virtual void Init(UCFrameMoverComponent* InMoverComp);
 	virtual void SetMovementBase(UPrimitiveComponent* Base, FName BaseBone);
 	virtual void BeginMoveFrame(float DeltaTime, uint32 RCF, uint32 ICF);
+	virtual void UpdateMoveFrame();
 	virtual void EndMoveFrame(float DeltaTime, uint32 RCF, uint32 ICF);
 
 	// 相机朝向？
@@ -63,7 +64,7 @@ protected:
 };
 
 UCLASS(Blueprintable, BlueprintType)
-class STATEABILITYSCRIPTRUNTIME_API UCFrameMoveStateProvider_Pawn : public UCFrameMoveStateProvider
+class STATEABILITYSCRIPTRUNTIME_API UCFrameMoveStateAdapter_Pawn : public UCFrameMoveStateAdapter
 {
 	GENERATED_BODY()
 public:

@@ -6,9 +6,50 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogCommandFrameNetChannel, Log, Verbose)
 
-PRIVATE_DEFINE_NAMESPACE(ACommandFrameNetChannel, FBitReader, Pos)
+PRIVATE_DEFINE_NAMESPACE(ADefaultCommandFrameNetChannel, FBitReader, Pos)
 
-ACommandFrameNetChannel::ACommandFrameNetChannel(const FObjectInitializer& ObjectInitializer)
+namespace DeltaNetPacketUtils
+{
+	template<>
+	void NetSerialize<EDeltaNetPacketType::Movement>(FCommandFrameDeltaNetPacket& NetPacket, FArchive& Ar, UPackageMap* Map, bool& bOutSuccess)
+	{
+		if (!NetPacket.NetChannel)
+		{
+			return;
+		}
+		if (ICommandFrameNetProcedure* Procedure = NetPacket.NetChannel->GetNetPacketProcedure(EDeltaNetPacketType::Movement))
+		{
+			FNetProcedureSyncParam SyncParam(NetPacket, Ar, Map, bOutSuccess);
+			Procedure->OnNetSync(SyncParam);
+		}
+		else
+		{
+			bOutSuccess = false;
+		}
+	}
+
+	template<>
+	void NetSerialize<EDeltaNetPacketType::StateAbilityScript>(FCommandFrameDeltaNetPacket& NetPacket, FArchive& Ar, UPackageMap* Map, bool& bOutSuccess)
+	{
+		if (!NetPacket.NetChannel)
+		{
+			return;
+		}
+		if (ICommandFrameNetProcedure* Procedure = NetPacket.NetChannel->GetNetPacketProcedure(EDeltaNetPacketType::StateAbilityScript))
+		{
+			FNetProcedureSyncParam SyncParam(NetPacket, Ar, Map, bOutSuccess);
+			Procedure->OnNetSync(SyncParam);
+		}
+		else
+		{
+			bOutSuccess = false;
+		}
+	}
+}
+
+//////////////////////////////////////////////////////////////////////////
+
+ADefaultCommandFrameNetChannel::ADefaultCommandFrameNetChannel(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 	, LastServerCommandFrame(0)
 	, LastClientCommandFrame(0)
@@ -23,7 +64,7 @@ ACommandFrameNetChannel::ACommandFrameNetChannel(const FObjectInitializer& Objec
 	bNetLoadOnClient = false;
 }
 
-void ACommandFrameNetChannel::BeginPlay()
+void ADefaultCommandFrameNetChannel::BeginPlay()
 {
 	if (GetWorld()->GetNetMode() == NM_Client)
 	{
@@ -31,33 +72,54 @@ void ACommandFrameNetChannel::BeginPlay()
 		check(CFrameManager);
 		CFrameManager->RegisterClientChannel(this);
 
-		CFrameManager->OnEndFrame.AddUObject(this, &ACommandFrameNetChannel::FixedTick);
+		CFrameManager->OnEndFrame.AddUObject(this, &ADefaultCommandFrameNetChannel::FixedTick);
 	}
 }
 
-void ACommandFrameNetChannel::FixedTick(float DeltaTime, uint32 RCF, uint32 ICF)
+void ADefaultCommandFrameNetChannel::FixedTick(float DeltaTime, uint32 RCF, uint32 ICF)
 {
 	VerifyUnorderedPackets();
 
 	ShrinkUnorderedPackets();
 }
 
-void ACommandFrameNetChannel::ClientSend_CommandFrameInputNetPacket(FCommandFrameInputNetPacket& InputNetPacket)
+void ADefaultCommandFrameNetChannel::ClientSend_CommandFrameInputNetPacket(FCommandFrameInputNetPacket& InputNetPacket)
 {
 	ServerReceive_CommandFrameInputNetPacket(InputNetPacket);
 }
 
-void ACommandFrameNetChannel::ServerSend_CommandFrameDeltaNetPacket(FCommandFrameDeltaNetPacket& DeltaNetPacket)
+void ADefaultCommandFrameNetChannel::ServerSend_CommandFrameDeltaNetPacket(FCommandFrameDeltaNetPacket& DeltaNetPacket)
 {
 	DeltaNetPacket.PrevServerCommandFrame = LastServerCommandFrame;
-	DeltaNetPacket.Channel = this;
+	DeltaNetPacket.NetChannel = this;
 
 	LastServerCommandFrame = DeltaNetPacket.ServerCommandFrame;
 
 	ClientReceive_CommandFrameDeltaNetPacket(DeltaNetPacket);
 }
 
-void ACommandFrameNetChannel::ServerReceive_CommandFrameInputNetPacket_Implementation(const FCommandFrameInputNetPacket& InputNetPacket)
+ICommandFrameNetProcedure* ADefaultCommandFrameNetChannel::GetNetPacketProcedure(EDeltaNetPacketType NetPacketType)
+{
+	TWeakObjectPtr<UObject> WeakProcedure = NetPacketProcedures.FindOrAdd(NetPacketType);
+	if (WeakProcedure.IsValid())
+	{
+		// GetClass()->ImplementsInterface(UCommandFrameNetProcedure::StaticClass())
+		return (ICommandFrameNetProcedure*)(WeakProcedure->GetNativeInterfaceAddress(UCommandFrameNetProcedure::StaticClass()));
+	}
+
+	return nullptr;
+}
+
+void ADefaultCommandFrameNetChannel::RegisterNetPacketProcedure(EDeltaNetPacketType NetPacketType, UObject* Procedure)
+{
+	if (IsValid(Procedure))
+	{
+		NetPacketProcedures.FindOrAdd(NetPacketType) = Procedure;
+	}
+}
+//////////////////////////////////////////////////////////////////////////
+
+void ADefaultCommandFrameNetChannel::ServerReceive_CommandFrameInputNetPacket_Implementation(const FCommandFrameInputNetPacket& InputNetPacket)
 {
 	if (IsValid(GetCommandFrameManager()))
 	{
@@ -98,7 +160,7 @@ void ACommandFrameNetChannel::ServerReceive_CommandFrameInputNetPacket_Implement
 	}
 }
 
-void ACommandFrameNetChannel::ClientReceive_CommandFrameDeltaNetPacket_Implementation(const FCommandFrameDeltaNetPacket& DeltaNetPacket)
+void ADefaultCommandFrameNetChannel::ClientReceive_CommandFrameDeltaNetPacket_Implementation(const FCommandFrameDeltaNetPacket& DeltaNetPacket)
 {
 	if (GetWorld()->GetNetMode() == NM_DedicatedServer)
 	{
@@ -129,13 +191,15 @@ void ACommandFrameNetChannel::ClientReceive_CommandFrameDeltaNetPacket_Implement
 	}
 }
 
-void ACommandFrameNetChannel::ProcessDeltaPrefix(const FCommandFrameDeltaNetPacket& DeltaNetPacket, FBitReader& BitReader)
+void ADefaultCommandFrameNetChannel::ProcessDeltaPrefix(const FCommandFrameDeltaNetPacket& DeltaNetPacket, FBitReader& BitReader)
 {
 	if (DeltaNetPacket.bLocal && IsValid(GetCommandFrameManager()))
 	{
 		bool bFault = false;
+		int32 PrefixDataSize = 0;
 		uint32 ServerCommandBufferNum = 0;
 
+		BitReader << PrefixDataSize;
 		BitReader << bFault;
 		BitReader << ServerCommandBufferNum;
 
@@ -151,10 +215,10 @@ void ACommandFrameNetChannel::ProcessDeltaPrefix(const FCommandFrameDeltaNetPack
 		GetCommandFrameManager()->UpdateTimeDilationHelper(ServerCommandBufferNum, bFault);
 	}
 
-	PRIVATE_GET_NAMESPACE(ACommandFrameNetChannel, &BitReader, Pos) = 0;
+	PRIVATE_GET_NAMESPACE(ADefaultCommandFrameNetChannel, &BitReader, Pos) = 0;
 }
 
-void ACommandFrameNetChannel::ProcessDeltaPackaged(const FCommandFrameDeltaNetPacket& DeltaNetPacket, FBitReader& BitReader)
+void ADefaultCommandFrameNetChannel::ProcessDeltaPackaged(const FCommandFrameDeltaNetPacket& DeltaNetPacket, FBitReader& BitReader)
 {
 	UE_LOG(LogCommandFrameNetChannel, Verbose, TEXT("Change LocalLast From[%d] To[%d]"), LastServerCommandFrame, DeltaNetPacket.ServerCommandFrame);
 	LastServerCommandFrame = DeltaNetPacket.ServerCommandFrame;
@@ -172,7 +236,7 @@ void ACommandFrameNetChannel::ProcessDeltaPackaged(const FCommandFrameDeltaNetPa
 	VerifyUnorderedPackets();
 }
 
-void ACommandFrameNetChannel::VerifyUnorderedPackets()
+void ADefaultCommandFrameNetChannel::VerifyUnorderedPackets()
 {
 	while (FCommandFrameDeltaNetPacket* PacketPtr = UnorderedPackets.Find(LastServerCommandFrame))
 	{
@@ -182,7 +246,7 @@ void ACommandFrameNetChannel::VerifyUnorderedPackets()
 	}
 }
 
-void ACommandFrameNetChannel::ShrinkUnorderedPackets()
+void ADefaultCommandFrameNetChannel::ShrinkUnorderedPackets()
 {
 	for (auto It = UnorderedPackets.CreateIterator(); It; ++It)
 	{
@@ -193,12 +257,12 @@ void ACommandFrameNetChannel::ShrinkUnorderedPackets()
 	}
 }
 
-void ACommandFrameNetChannel::RemoveUnorderedPacket(uint32 CommandFrame)
+void ADefaultCommandFrameNetChannel::RemoveUnorderedPacket(uint32 CommandFrame)
 {
 	UnorderedPackets.Remove(CommandFrame);
 }
 
-void ACommandFrameNetChannel::ResetCommandFrame(uint32 ServerCommandFrame, uint32 PrevServerCommandFrame)
+void ADefaultCommandFrameNetChannel::ResetCommandFrame(uint32 ServerCommandFrame, uint32 PrevServerCommandFrame)
 {
 	CFrameManager->ResetCommandFrame(ServerCommandFrame);
 	LastServerCommandFrame = PrevServerCommandFrame;
@@ -215,7 +279,7 @@ void ACommandFrameNetChannel::ResetCommandFrame(uint32 ServerCommandFrame, uint3
 	CFrameManager->UpdateTimeDilationHelper(0, true);
 }
 
-UCommandFrameManager* ACommandFrameNetChannel::GetCommandFrameManager()
+UCommandFrameManager* ADefaultCommandFrameNetChannel::GetCommandFrameManager()
 {
 	if (!IsValid(CFrameManager))
 	{

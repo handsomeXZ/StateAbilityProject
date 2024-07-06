@@ -7,7 +7,7 @@
 #include "Buffer/BufferTypes.h"
 #include "CommandFrameManager.h"
 #include "Net/Packet/CommandFrameInput.h"
-#include "Net/CommandFrameNetChannel.h"
+#include "Net/CommandFrameNetTypes.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogCommandFrameNetPacket, Log, Verbose)
 
@@ -68,15 +68,14 @@ namespace DeltaNetPacketUtils
 	}
 
 	template<>
-	bool NetSerialize<EDeltaNetPacketType::Fault_FrameExpiry>(FCommandFrameDeltaNetPacket& Packet, bool bLocal)
+	void NetSerialize<EDeltaNetPacketType::Fault_FrameExpiry>(FCommandFrameDeltaNetPacket& NetPacket, FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess)
 	{
-		if (bLocal)
+		if (NetPacket.bLocal)
 		{
 			
 		}
-
-		return true;
 	}
+
 
 }
 
@@ -85,16 +84,16 @@ namespace DeltaNetPacketUtils
 FCommandFrameDeltaNetPacket::FCommandFrameDeltaNetPacket()
 	: ServerCommandFrame(0)
 	, PrevServerCommandFrame(0)
-	, Channel(nullptr)
+	, NetChannel(nullptr)
 	, PacketType(EDeltaNetPacketType::None)
 {
 
 }
 
-FCommandFrameDeltaNetPacket::FCommandFrameDeltaNetPacket(uint32 InServerCommandFrame, uint32 InPrevServerCommandFrame, EDeltaNetPacketType InPacketType, ACommandFrameNetChannel* InChannel)
+FCommandFrameDeltaNetPacket::FCommandFrameDeltaNetPacket(uint32 InServerCommandFrame, uint32 InPrevServerCommandFrame, EDeltaNetPacketType InPacketType, ACommandFrameNetChannelBase* InNetChannel)
 	: ServerCommandFrame(InServerCommandFrame)
 	, PrevServerCommandFrame(InPrevServerCommandFrame)
-	, Channel(InChannel)
+	, NetChannel(InNetChannel)
 	, PacketType(InPacketType)
 {
 
@@ -104,80 +103,91 @@ bool FCommandFrameDeltaNetPacket::NetSerialize(FArchive& Ar, class UPackageMap* 
 {
 	if (Ar.IsSaving())
 	{
+		PackageMap = Map;
+
 		UPackageMapClient* PackageMapClient = Cast<UPackageMapClient>(Map);
 		UNetConnection* NetConnection = PackageMapClient->GetConnection();
 
-		UNetConnection* OwnerConnection = Channel->GetNetConnection();
+		UNetConnection* OwnerConnection = NetChannel->GetNetConnection();
 		bLocal = NetConnection == OwnerConnection;
 	}
 
 	Ar << ServerCommandFrame;
 	Ar << PrevServerCommandFrame;
-	Ar << Channel;
+	Ar << NetChannel;
 
 	uint32 IntPacketType = uint32(PacketType);
 	Ar << IntPacketType;
+
+	Ar << bLocal;
+	Ar << PackageMap;
 
 	if (Ar.IsLoading())
 	{
 		PacketType = EDeltaNetPacketType(IntPacketType);
 	}
 
-	Ar << bLocal;
-
-	if (bLocal)
+	if (Ar.IsSaving())
 	{
-		if (Ar.IsSaving())
+		FNetBitWriter NetBitWriter;
+		NetBitWriter.PackageMap = PackageMap;
+		NetBitWriter.SetAllowResize(true);
+
+		int32 PrefixDataSize = 0;
+		if (bLocal)
 		{
+			FBitArchiveSizeScope Scope(NetBitWriter, PrefixDataSize);
+
 			bool bFault = PacketType & 0xF0000000;
 			uint32 ServerCommandBufferNum = 0;
 
-			FBitWriter BitWriter;
-			BitWriter.SetAllowResize(true);
-
-			UCommandFrameManager* CFManager = Channel->GetWorld()->GetSubsystem<UCommandFrameManager>();
-			APlayerController* PC = Cast<APlayerController>(Channel->GetNetConnection()->OwningActor);
+			UCommandFrameManager* CFManager = NetChannel->GetWorld()->GetSubsystem<UCommandFrameManager>();
+			APlayerController* PC = Cast<APlayerController>(NetChannel->GetNetConnection()->OwningActor);
 			APlayerState* PS = PC->GetPlayerState<APlayerState>();
 
 			ServerCommandBufferNum = CFManager->GetCurCommandBufferNum(PS->GetUniqueId());
 
-			BitWriter << bFault;
-			BitWriter << ServerCommandBufferNum;
-
-			RawData.SetNumUninitialized(BitWriter.GetNumBits());
-
-			check(RawData.Num() >= BitWriter.GetNumBits());
-			FMemory::Memcpy(RawData.GetData(), BitWriter.GetData(), BitWriter.GetNumBytes());
-		}
-	}
-	else
-	{
-
-	}
-
-	if (RawData.IsEmpty())
-	{
-		if (PacketType & EDeltaNetPacketType::Movement)
-		{
-
+			NetBitWriter << bFault;
+			NetBitWriter << ServerCommandBufferNum;
 		}
 
-		if (PacketType & EDeltaNetPacketType::StateAbilityScript)
+		if (RawData.IsEmpty())
 		{
+			bOutSuccess = true;
 
-		}
-
-		if (PacketType & EDeltaNetPacketType::Fault_FrameExpiry)
-		{
-			if (!DeltaNetPacketUtils::NetSerialize<EDeltaNetPacketType::Fault_FrameExpiry>(*this, bLocal))
+			if (PacketType & EDeltaNetPacketType::Movement)
 			{
-				bOutSuccess = false;
-				return false;
+				DeltaNetPacketUtils::NetSerialize<EDeltaNetPacketType::Movement>(*this, NetBitWriter, Map, bOutSuccess);
+				if (!bOutSuccess)
+				{
+					return false;
+				}
+			}
+
+			if (PacketType & EDeltaNetPacketType::StateAbilityScript)
+			{
+				DeltaNetPacketUtils::NetSerialize<EDeltaNetPacketType::StateAbilityScript>(*this, NetBitWriter, Map, bOutSuccess);
+				if (!bOutSuccess)
+				{
+					return false;
+				}
+			}
+
+			if (PacketType & EDeltaNetPacketType::Fault_FrameExpiry)
+			{
+				DeltaNetPacketUtils::NetSerialize<EDeltaNetPacketType::Fault_FrameExpiry>(*this, NetBitWriter, Map, bOutSuccess);
+				if (!bOutSuccess)
+				{
+					return false;
+				}
 			}
 		}
-	}
 
-	Ar << ObjectPool;
+		RawData.SetNumUninitialized(NetBitWriter.GetNumBits());
+
+		check(RawData.Num() >= NetBitWriter.GetNumBits());
+		FMemory::Memcpy(RawData.GetData(), NetBitWriter.GetData(), NetBitWriter.GetNumBytes());
+	}
 
 
 	// Array size in bits, using minimal number of bytes to write it out.

@@ -3,7 +3,10 @@
 #include "Components/InputComponent.h"
 
 #include "Component/CFrameMoverComponent.h"
+#include "Component/Mover/CFrameLayeredMove.h"
+#include "Component/Mover/CFrameProposedMove.h"
 #include "Component/Mover/CFrameMovementMixer.h"
+#include "Component/Mover/CFrameMoveStateAdapter.h"
 #include "Component/Mover/Mode/CFrameWalkingMode.h"
 
 UCFrameMoveModeStateMachine::UCFrameMoveModeStateMachine(const FObjectInitializer& ObjectInitializer)
@@ -25,9 +28,9 @@ void UCFrameMoveModeStateMachine::Init(FCFrameMovementConfig& Config)
 
 	//////////////////////////////////////////////////////////////////////////
 
-	if (IsValid(Config.MoveStateProvider))
+	if (IsValid(Config.MoveStateAdapter))
 	{
-		Config.MoveStateProvider->Init(MoverComp);
+		Config.MoveStateAdapter->Init(MoverComp);
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -81,12 +84,12 @@ void UCFrameMoveModeStateMachine::FixedTick(float DeltaTime, uint32 RCF, uint32 
 {
 	UCFrameMoverComponent* MoverComp = CastChecked<UCFrameMoverComponent>(GetOuter());
 	
-	UCFrameMoveStateProvider* MoveStateProvider = MoverComp->GetMovementConfig().MoveStateProvider;
+	UCFrameMoveStateAdapter* MoveStateAdapter = MoverComp->GetMovementConfig().MoveStateAdapter;
 
-	MoveStateProvider->BeginMoveFrame(DeltaTime, RCF, ICF);
+	MoveStateAdapter->BeginMoveFrame(DeltaTime, RCF, ICF);
 
 	Context.ResetFrameData();
-	Context.Init(DeltaTime, RCF, ICF);
+	Context.Init(MoverComp, DeltaTime, RCF, ICF);
 
 	// Gather any layered move contributions
 	FCFrameProposedMove CombinedLayeredMove;
@@ -106,5 +109,5 @@ void UCFrameMoveModeStateMachine::FixedTick(float DeltaTime, uint32 RCF, uint32 
 	CurrentMode->Execute(Context);
 
 
-	MoveStateProvider->EndMoveFrame(DeltaTime, RCF, ICF);
+	MoveStateAdapter->EndMoveFrame(DeltaTime, RCF, ICF);
 }

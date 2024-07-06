@@ -1,9 +1,9 @@
-#include "Component/Mover/CFrameMoveStateProvider.h"
+#include "Component/Mover/CFrameMoveStateAdapter.h"
 
 #include "Component/CFrameMoverComponent.h"
 #include "Component/Mover/MoveLibrary/CFrameBasedMoveUtils.h"
 
-UCFrameMoveStateProvider::UCFrameMoveStateProvider()
+UCFrameMoveStateAdapter::UCFrameMoveStateAdapter()
 	: MoverComponent(nullptr)
 	, MovementBase(nullptr)
 	, MovementBaseBoneName(NAME_None)
@@ -16,12 +16,12 @@ UCFrameMoveStateProvider::UCFrameMoveStateProvider()
 
 }
 
-void UCFrameMoveStateProvider::Init(UCFrameMoverComponent* InMoverComp)
+void UCFrameMoveStateAdapter::Init(UCFrameMoverComponent* InMoverComp)
 {
 	MoverComponent = InMoverComp;
 }
 
-void UCFrameMoveStateProvider::SetMovementBase(UPrimitiveComponent* Base, FName BaseBone)
+void UCFrameMoveStateAdapter::SetMovementBase(UPrimitiveComponent* Base, FName BaseBone)
 {
 	MovementBase = Base;
 	MovementBaseBoneName = BaseBone;
@@ -42,21 +42,25 @@ void UCFrameMoveStateProvider::SetMovementBase(UPrimitiveComponent* Base, FName 
 	}
 }
 
-void UCFrameMoveStateProvider::BeginMoveFrame(float DeltaTime, uint32 RCF, uint32 ICF)
+void UCFrameMoveStateAdapter::BeginMoveFrame(float DeltaTime, uint32 RCF, uint32 ICF)
 {
 	LastFrameLocation = GetLocation_WorldSpace();
 
-	// 这里不应该更新 LastFrameDeltaTime
-}
-
-void UCFrameMoveStateProvider::EndMoveFrame(float DeltaTime, uint32 RCF, uint32 ICF)
-{
-	LastFrameMoveDelta = GetLocation_WorldSpace() - LastFrameLocation;
-	LastFrameLocation = GetLocation_WorldSpace();
 	LastFrameDeltaTime = DeltaTime;
 }
 
-FVector UCFrameMoveStateProvider::GetLocation_WorldSpace() const
+void UCFrameMoveStateAdapter::UpdateMoveFrame()
+{
+	LastFrameMoveDelta = GetLocation_WorldSpace() - LastFrameLocation;
+	LastFrameLocation = GetLocation_WorldSpace();
+}
+
+void UCFrameMoveStateAdapter::EndMoveFrame(float DeltaTime, uint32 RCF, uint32 ICF)
+{
+	
+}
+
+FVector UCFrameMoveStateAdapter::GetLocation_WorldSpace() const
 {
 	if (MovementBase)
 	{
@@ -66,7 +70,7 @@ FVector UCFrameMoveStateProvider::GetLocation_WorldSpace() const
 	return GetLocation_BaseSpace(); // if no base, assumed to be in world space
 }
 
-FVector UCFrameMoveStateProvider::GetVelocity_WorldSpace() const
+FVector UCFrameMoveStateAdapter::GetVelocity_WorldSpace() const
 {
 	if (MovementBase)
 	{
@@ -76,12 +80,12 @@ FVector UCFrameMoveStateProvider::GetVelocity_WorldSpace() const
 	return GetVelocity_BaseSpace(); // if no base, assumed to be in world space
 }
 
-FVector UCFrameMoveStateProvider::GetVelocity_BaseSpace() const
+FVector UCFrameMoveStateAdapter::GetVelocity_BaseSpace() const
 {
 	return LastFrameDeltaTime > FLOAT_NORMAL_THRESH ? (LastFrameMoveDelta / LastFrameDeltaTime) : FVector::ZeroVector;
 }
 
-FRotator UCFrameMoveStateProvider::GetOrientation_WorldSpace() const
+FRotator UCFrameMoveStateAdapter::GetOrientation_WorldSpace() const
 {
 	if (MovementBase)
 	{
@@ -92,25 +96,25 @@ FRotator UCFrameMoveStateProvider::GetOrientation_WorldSpace() const
 }
 
 //////////////////////////////////////////////////////////////////////////
-// UCFrameMoveStateProvider_Pawn
-void UCFrameMoveStateProvider_Pawn::Init(UCFrameMoverComponent* InMoverComp)
+// UCFrameMoveStateAdapter_Pawn
+void UCFrameMoveStateAdapter_Pawn::Init(UCFrameMoverComponent* InMoverComp)
 {
 	Super::Init(InMoverComp);
 
 	StateOwner = CastChecked<APawn>(InMoverComp->GetOuter());
 }
 
-FRotator UCFrameMoveStateProvider_Pawn::GetControlRotation() const
+FRotator UCFrameMoveStateAdapter_Pawn::GetControlRotation() const
 {
 	return StateOwner->GetControlRotation();
 }
 
-FVector UCFrameMoveStateProvider_Pawn::GetLocation_BaseSpace() const
+FVector UCFrameMoveStateAdapter_Pawn::GetLocation_BaseSpace() const
 {
 	return StateOwner->GetActorLocation();
 }
 
-FRotator UCFrameMoveStateProvider_Pawn::GetOrientation_BaseSpace() const
+FRotator UCFrameMoveStateAdapter_Pawn::GetOrientation_BaseSpace() const
 {
 	return StateOwner->GetActorRotation();
 }

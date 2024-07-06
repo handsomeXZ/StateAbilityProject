@@ -117,7 +117,6 @@ public:
 	virtual void OnUnregistered() {}
 	virtual void GenerateMove(FCFrameMovementContext& Context, FCFrameProposedMove& OutProposedMove) {}
 	virtual void Execute(FCFrameMovementContext& Context) {}
-	virtual void SerializeSnapShot(FArchive& Ar, TArray<UObject>& ObjectPool) {}
 
 	virtual void SetupInputComponent(UInputComponent* InInputComponent);
 

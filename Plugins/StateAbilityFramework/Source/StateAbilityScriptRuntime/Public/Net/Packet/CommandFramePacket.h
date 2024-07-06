@@ -15,12 +15,11 @@
 #define CHARACTER_SERIALIZATION_PACKEDBITS_RESERVED_SIZE 1024
 #endif
 
+class ACommandFrameNetChannelBase;
 struct FCommandFrameInputFrame;
 struct FCommandFrameInputAtom;
-class ACommandFrameNetChannel;
 
-
-enum EDeltaNetPacketType
+enum EDeltaNetPacketType : uint32
 {
 	None						= 0x00000000,
 	Movement					= 1,
@@ -51,7 +50,6 @@ enum EDeltaNetPacketType
  * 
  * [RAW DATA StateAbilityScript]
  *
- * uint32 ObjectPoolRange 用于映射 ScriptArchetype
  * uint32 ChunkDataSize_0
  * uint32 ChunkDataSize_1
  * uint32 ChunkDataSize_2
@@ -66,7 +64,7 @@ namespace DeltaNetPacketUtils
 	void BuildPacket_Fault_FrameExpiry(FCommandFrameDeltaNetPacket& Packet);
 
 	template<EDeltaNetPacketType Type>
-	bool NetSerialize(FCommandFrameDeltaNetPacket& Packet, bool bLocal) { return true; }
+	void NetSerialize(FCommandFrameDeltaNetPacket& NetPacket, FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess);
 }
 
 USTRUCT()
@@ -75,18 +73,19 @@ struct FCommandFrameDeltaNetPacket
 	GENERATED_BODY()
 public:
 	FCommandFrameDeltaNetPacket();
-	FCommandFrameDeltaNetPacket(uint32 InServerCommandFrame, uint32 InPrevServerCommandFrame, EDeltaNetPacketType InPacketType, ACommandFrameNetChannel* InChannel);
+	FCommandFrameDeltaNetPacket(uint32 InServerCommandFrame, uint32 InPrevServerCommandFrame, EDeltaNetPacketType InPacketType, ACommandFrameNetChannelBase* InNetChannel);
 
 	bool NetSerialize(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess);
 
 	uint32 ServerCommandFrame;
 	uint32 PrevServerCommandFrame;
-	ACommandFrameNetChannel* Channel;
+	ACommandFrameNetChannelBase* NetChannel;
 	EDeltaNetPacketType PacketType;
 
 	bool bLocal;
 
-	TArray<UObject*> ObjectPool;
+	UPROPERTY()
+	class UPackageMap* PackageMap;
 
 	TBitArray<TInlineAllocator<CHARACTER_SERIALIZATION_PACKEDBITS_RESERVED_SIZE / NumBitsPerDWORD>> RawData;
 };

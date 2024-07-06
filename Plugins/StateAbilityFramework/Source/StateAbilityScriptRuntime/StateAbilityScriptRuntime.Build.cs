@@ -42,6 +42,7 @@ public class StateAbilityScriptRuntime : ModuleRules
 				"SlateCore",
 				// ... add private dependencies that you statically link with here ...	
 				"CoreOnline",
+                "StructUtils",
 
 				// 临时借用一下Mover内部的类
                 "Mover",
