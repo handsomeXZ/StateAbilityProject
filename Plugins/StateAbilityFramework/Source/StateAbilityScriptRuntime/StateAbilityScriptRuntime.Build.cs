@@ -43,6 +43,8 @@ public class StateAbilityScriptRuntime : ModuleRules
 				// ... add private dependencies that you statically link with here ...	
 				"CoreOnline",
                 "StructUtils",
+                "NetCore",
+
 
 				// 临时借用一下Mover内部的类
                 "Mover",

@@ -12,6 +12,8 @@ void FCFrameMovementContext::Init(UCFrameMoverComponent* InMoverComp, float InDe
 	UpdatedComponent = MoverComp->GetUpdatedComponent();
 	UpdatedPrimitive = MoverComp->GetPrimitiveComponent();
 	MoveStateAdapter = MoverComp->GetMovementConfig().MoveStateAdapter;
+
+	CFrameManager = MoverComp->GetCommandFrameManager();
 }
 
 void FCFrameMovementContext::ResetFrameData()
@@ -24,6 +26,7 @@ void FCFrameMovementContext::ResetFrameData()
 	UpdatedComponent = nullptr;
 	UpdatedPrimitive = nullptr;
 	MoveStateAdapter = nullptr;
+	CFrameManager = nullptr;
 	CombinedMove.Clear();
 }
 
@@ -32,6 +35,13 @@ void FCFrameMovementContext::ResetAllData()
 	ResetFrameData();
 
 	PersistentDataBuffer.Empty();
+}
+
+bool FCFrameMovementContext::IsValid()
+{
+	return IsValid(MoverComp) && 
+		IsValid(MoveStateAdapter) &&
+		IsValid(CFrameManager);
 }
 
 FStructView FCFrameMovementContext::GetPersistentData(FName Key)

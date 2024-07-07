@@ -12,55 +12,15 @@
 
 #include "CFrameMovementContext.generated.h"
 
-class UCFrameMoveModeTransition;
 class UCFrameMoveStateAdapter;
-class UCFrameMovementMixer;
-class UCFrameMovementMode;
-class UCFrameLayeredMove;
 class UCFrameMoverComponent;
+class UCommandFrameManager;
 
 namespace CFrameContextDataKey
 {
 	const FName LastFloorResult = TEXT("LastFloor");
 	const FName LastFoundDynamicMovementBase = TEXT("LastFoundDynamicMovementBase");
 }
-
-/**
- * @TODO: 最好改为可视化编辑
- */
-USTRUCT(BlueprintType)
-struct FCFrameModeTransitionLink
-{
-	GENERATED_BODY()
-public:
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	TSubclassOf<UCFrameMoveModeTransition> ModeTransition;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	FName FromMode;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	FName ToMode;
-};
-
-USTRUCT(BlueprintType)
-struct FCFrameMovementConfig
-{
-	GENERATED_BODY()
-
-public:
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Instanced, Category = Config)
-	TObjectPtr<UCFrameMoveStateAdapter> MoveStateAdapter;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Instanced, Category = Config)
-	TObjectPtr<UCFrameMovementMixer> MovementMixer;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Config, meta = (FullyExpand = true))
-	TMap<FName, TSubclassOf<UCFrameMovementMode>> MovementModes;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Instanced, Category = Config)
-	TArray<TObjectPtr<UCFrameLayeredMove>> LayeredMoves;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Config)
-	FName DefaultModeName;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Config)
-	TArray<FCFrameModeTransitionLink> ModeTransitionLinks;
-};
 
 USTRUCT()
 struct FCFrameMovementContextPersistentData
@@ -79,6 +39,7 @@ struct FCFrameMovementContext
 	void Init(UCFrameMoverComponent* InMoverComp, float InDeltaTime, uint32 InRCF, uint32 InICF);
 	void ResetFrameData();	// 仅清除每帧的临时数据
 	void ResetAllData();	// 清除所有数据（包含跨帧数据）
+	bool IsValid();
 
 	//////////////////////////////////////////////////////////////////////////
 	// 临时数据
@@ -90,6 +51,9 @@ struct FCFrameMovementContext
 	USceneComponent* UpdatedComponent;
 	UPrimitiveComponent* UpdatedPrimitive;
 	UCFrameMoveStateAdapter* MoveStateAdapter;
+
+	UCommandFrameManager* CFrameManager;
+
 	FCFrameProposedMove CombinedMove;
 
 	//////////////////////////////////////////////////////////////////////////

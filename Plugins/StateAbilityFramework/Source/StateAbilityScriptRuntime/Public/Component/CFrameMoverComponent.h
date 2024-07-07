@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 
 #include "Net/CommandFrameNetTypes.h"
+#include "Component/Mover/CFrameMovementTypes.h"
 #include "Component/Mover/CFrameMovementContext.h"
 
 #include "CFrameMoverComponent.generated.h"
@@ -50,13 +51,15 @@ public:
 	USceneComponent* GetUpdatedComponent() const { return UpdatedComponent; }
 	UPrimitiveComponent* GetPrimitiveComponent() const { return UpdatedCompAsPrimitive; }
 	FCFrameMovementConfig& GetMovementConfig() { return MovementConfig; }
+	UCommandFrameManager* GetCommandFrameManager();
 protected:
 	// Basic "Update Component/Ticking"
 	void SetUpdatedComponent(USceneComponent* NewUpdatedComponent);
 	void UpdateTickRegistration();
 
-	UCommandFrameManager* GetCommandFrameManager();
-
+	// 检查客户端是否超过了允许的位置误差
+	bool CheckClientExceedsAllowablePositionError(const FVector& ServerWorldLocation);
+	void AdjustClientPosition(FVector WorldLocation, FVector WorldVelocity, FRotator WorldOrientation, UPrimitiveComponent* MovementBase, FName MovementBaseBoneName);
 protected:
 	//////////////////////////////////////////////////////////////////////////
 	// CallBack

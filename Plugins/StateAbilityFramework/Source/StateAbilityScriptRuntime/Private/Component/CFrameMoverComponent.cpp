@@ -1,10 +1,14 @@
 #include "Component/CFrameMoverComponent.h"
 
 #include "GameFramework/PhysicsVolume.h"
+#include "Engine/NetSerialization.h"
+#include "GameFramework/GameNetworkManager.h"
 
 #include "CommandFrameManager.h"
+#include "Net/Packet/CommandFramePacket.h"
 #include "Component/Mover/CFrameMovementMode.h"
 #include "Component/Mover/CFrameMoveModeStateMachine.h"
+#include "Component/Mover/CFrameMoveStateAdapter.h"
 
 const FVector UCFrameMoverComponent::DefaultGravityAccel = FVector(0.0, 0.0, -980.0);
 const FVector UCFrameMoverComponent::DefaultUpDir = FVector(0.0, 0.0, 1.0);
@@ -196,10 +200,109 @@ void UCFrameMoverComponent::OnHandleImpact(const FHitResult& Hit, const FName Mo
 
 void UCFrameMoverComponent::OnNetSync(FNetProcedureSyncParam& SyncParam)
 {
-	if (SyncParam.Ar.IsSaving())
+	UCFrameMoveStateAdapter* Adapter = MovementConfig.MoveStateAdapter;
+	FArchive& Ar = SyncParam.Ar;
+	UPackageMap* Map = SyncParam.Map;
+	bool& bOutSuccess = SyncParam.bOutSuccess;
+	
+	if (Ar.IsSaving())
 	{
-		//SyncParam.Ar << 
+		FVector Location = Adapter->GetLocation_WorldSpace();
+		FVector Velocity = Adapter->GetVelocity_WorldSpace();
+		SerializePackedVector<100, 30>(Location, Ar);
+		SerializePackedVector<10, 16>(Velocity, Ar);
+		Adapter->GetOrientation_WorldSpace().SerializeCompressedShort(Ar);
+
+		
+		UPrimitiveComponent* MovementBase = Adapter->GetMovementBase();
+		FName MovementBaseBoneName = Adapter->GetMovementBaseBoneName();
+		//FVector MovementBasePos = Adapter->GetMovementBasePos();
+		//FQuat MovementBaseQuat = Adapter->GetMovementBaseQuat();
+
+		// Optional movement base
+		bool bIsUsingMovementBase = MovementBase != nullptr;
+		Ar.SerializeBits(&bIsUsingMovementBase, 1);
+
+		if (bIsUsingMovementBase)
+		{
+			Ar << MovementBase;
+			Ar << MovementBaseBoneName;	// @TODO：传递FName等同于传递FString，挺浪费的
+
+			//SerializePackedVector<100, 30>(MovementBasePos, Ar);
+			//MovementBaseQuat.NetSerialize(Ar, Map, bOutSuccess);
+		}
 	}
+	else if (Ar.IsLoading())
+	{
+		FVector Location;
+		FVector Velocity;
+		FRotator Orientation;
+		SerializePackedVector<100, 30>(Location, Ar);
+		SerializePackedVector<10, 16>(Velocity, Ar);
+		Orientation.SerializeCompressedShort(Ar);
+
+		// Optional movement base
+		bool bIsUsingMovementBase;
+		Ar.SerializeBits(&bIsUsingMovementBase, 1);
+		
+		UPrimitiveComponent* MovementBase = nullptr;
+		FName MovementBaseBoneName = NAME_None;
+		//FVector MovementBasePos;
+		//FQuat MovementBaseQuat;
+
+		if (bIsUsingMovementBase)
+		{
+			Ar << MovementBase;
+			Ar << MovementBaseBoneName;
+
+			//SerializePackedVector<100, 30>(MovementBasePos, Ar);
+			//MovementBaseQuat.NetSerialize(Ar, Map, bOutSuccess);
+		}
+
+		if (CheckClientExceedsAllowablePositionError(Location))
+		{
+			if (SyncParam.NetPacket.bLocal)
+			{
+				AdjustClientPosition(Location, Velocity, Orientation, MovementBase, MovementBaseBoneName);
+
+			}
+		}
+	}
+}
+
+bool UCFrameMoverComponent::CheckClientExceedsAllowablePositionError(const FVector& ServerWorldLocation)
+{
+	// 参照 UCharacterMovementComponent::ServerExceedsAllowablePositionError
+
+	UCFrameMoveStateAdapter* Adapter = MovementConfig.MoveStateAdapter;
+
+	// Check for disagreement in movement mode
+	//const uint8 CurrentPackedMovementMode = PackNetworkMovementMode();
+	//if (CurrentPackedMovementMode != ClientMovementMode)
+	//{
+	//	// Consider this a major correction, see SendClientAdjustment()
+	//	bNetworkLargeClientCorrection = true;
+	//	return true;
+	//}
+
+	const FVector LocDiff = Adapter->GetLocation_WorldSpace() - ServerWorldLocation;
+	// 啥玩意？为了读取通用配置？
+	const AGameNetworkManager* GameNetworkManager = (const AGameNetworkManager*)(AGameNetworkManager::StaticClass()->GetDefaultObject());
+	if (GameNetworkManager->ExceedsAllowablePositionError(LocDiff))
+	{
+		return true;
+	}
+
+	return false;
+
+}
+
+void UCFrameMoverComponent::AdjustClientPosition(FVector WorldLocation, FVector WorldVelocity, FRotator WorldOrientation, UPrimitiveComponent* MovementBase, FName MovementBaseBoneName)
+{
+	UpdatedComponent->SetWorldLocationAndRotation(WorldLocation, WorldOrientation);
+	UpdatedComponent->ComponentVelocity = WorldVelocity;
+
+	MovementConfig.MoveStateAdapter->SetMovementBase(MovementBase, MovementBaseBoneName);
 }
 
 FVector UCFrameMoverComponent::GetGravityAcceleration() const

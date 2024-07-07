@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 
+#include "Component/Mover/CFrameMovementTypes.h"
 #include "Component/Mover/CFrameMovementContext.h"
 
 #include "CFrameMoveModeStateMachine.generated.h"
@@ -31,9 +32,14 @@ class UCFrameMoveModeStateMachine : public UObject
 public:
 	void Init(FCFrameMovementConfig& Config);
 	void FixedTick(float DeltaTime, uint32 RCF, uint32 ICF);
+	void UpdateTransition() {}
 
 	UCFrameMovementMode* GetCurrentMode() { return CurrentMode; }
 	FName GetCurrentModeName() { return CurrentModeName; }
+
+protected:
+	void RecordMovementSnapshot();
+
 protected:
 	UPROPERTY(Transient)
 	TMap<FName, FCFrameMoveModeInfo> ModeInfos;
