@@ -38,6 +38,10 @@ public:
 	virtual FRotator GetOrientation_WorldSpace() const;
 	virtual FRotator GetOrientation_BaseSpace() const { return FRotator::ZeroRotator; }
 
+	virtual FVector GetUp() const { return FVector::ZeroVector; }
+	virtual FVector GetRight() const { return FVector::ZeroVector; }
+	virtual FVector GetForward() const { return FVector::ZeroVector; }
+
 	virtual UPrimitiveComponent* GetMovementBase() const { return MovementBase; }
 	virtual FName GetMovementBaseBoneName() const { return MovementBaseBoneName; }
 	virtual FVector GetMovementBasePos() const { return MovementBasePos; }
@@ -73,6 +77,10 @@ public:
 	virtual FRotator GetControlRotation() const override;
 	virtual FVector GetLocation_BaseSpace() const override;
 	virtual FRotator GetOrientation_BaseSpace() const override;
+
+	virtual FVector GetUp() const override;
+	virtual FVector GetRight() const override;
+	virtual FVector GetForward() const override;
 private:
 	UPROPERTY(Transient)
 	TObjectPtr<APawn> StateOwner;

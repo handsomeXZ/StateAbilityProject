@@ -35,7 +35,9 @@ public:
 	virtual void OnHandleImpact(const FHitResult& Hit, const FName ModeName, const FVector& MoveDelta);
 
 	// ICommandFrameNetProcedure
-	virtual void OnNetSync(FNetProcedureSyncParam& SyncParam) override;
+	virtual void OnServerNetSync(FNetProcedureSyncParam& SyncParam) override;
+	virtual void OnClientNetSync(FNetProcedureSyncParam& SyncParam, bool& bNeedRewind) override;
+	virtual void OnClientRewind() override;
 	// ~ICommandFrameNetProcedure
 
 	void HandleImpact(const FHitResult& Hit, const FName ModeName = NAME_None, const FVector& MoveDelta = FVector::ZeroVector);

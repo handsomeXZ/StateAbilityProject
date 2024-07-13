@@ -18,7 +18,7 @@ struct FCommandFrameInputFrame
 	TArray<FCommandFrameInputAtom> InputQueue;
 	TMap<FUniqueNetIdRepl, uint8> OrderCounter;
 
-	FBitWriter SharedSerialization;
+	FNetBitWriter SharedSerialization;
 
 	void AddItem(const FUniqueNetIdRepl& Key, const TArray<FCommandFrameInputAtom>& ItemData);
 	uint8* AllocateItem(const FUniqueNetIdRepl& Key, uint32 DataSize);

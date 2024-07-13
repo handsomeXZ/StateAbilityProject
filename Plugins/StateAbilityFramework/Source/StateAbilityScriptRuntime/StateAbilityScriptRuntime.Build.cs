@@ -48,6 +48,8 @@ public class StateAbilityScriptRuntime : ModuleRules
 
 				// 临时借用一下Mover内部的类
                 "Mover",
+				// 临时借用一下Debug
+				"Chaos",
             }
 			);
 		

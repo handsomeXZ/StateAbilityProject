@@ -3,6 +3,12 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
 
+#if WITH_EDITOR
+#include "Debug/DebugUtils.h"
+#endif
+
+#define LOCTEXT_NAMESPACE "TimeDilationHelper"
+
 DEFINE_LOG_CATEGORY_STATIC(LogTimeDilationHelper, Log, All);
 
 const float FTimeDilationHelper::TargetTimeDilation = 1.f;
@@ -74,6 +80,36 @@ void FTimeDilationHelper::Update(UWorld* WorldContext, uint32 ServerInputBufferN
 	}
 }
 
+FTimeDilationHelper::FTimeDilationHelper()
+	: MinCommandBufferNum(4)
+	, MaxCommandBufferNum(16)
+	, FixedFrameRate(30.0f)
+	, TimeMagAverager(0)
+	, TimeDilationAdaptStage(ETimeDilationAdaptStage::Default)
+	, CurTimeDilation(1.0f)
+	, AccumulatedStableSeconds(0.0f)
+	, LastServerCommandBufferNum(0.0f)
+{
+
+}
+
+FTimeDilationHelper::FTimeDilationHelper(int32 DataNum, uint32 InMinCommandBufferNum, uint32 InMaxCommandBufferNum, float InFixedFrameRate)
+	: MinCommandBufferNum(InMinCommandBufferNum)
+	, MaxCommandBufferNum(InMaxCommandBufferNum)
+	, FixedFrameRate(InFixedFrameRate)
+	, TimeMagAverager(DataNum)
+	, TimeDilationAdaptStage(ETimeDilationAdaptStage::Default)
+	, CurTimeDilation(1.0f)
+	, AccumulatedStableSeconds(0.0f)
+	, LastServerCommandBufferNum(0.0f)
+{
+	TimeDilationAdaptStage = ETimeDilationAdaptStage::Default;
+	CurTimeDilation = 1.0f;
+	AccumulatedStableSeconds = 0.0f;
+	LastServerCommandBufferNum = 0;
+
+}
+
 void FTimeDilationHelper::FixedTick(UWorld* WorldContext, float DeltaTime)
 {
 	float LocalPing = GetLocalPing(WorldContext);
@@ -83,8 +119,19 @@ void FTimeDilationHelper::FixedTick(UWorld* WorldContext, float DeltaTime)
 		return;
 	}
 
-	const UEnum* Enum = StaticEnum<ETimeDilationAdaptStage>();
-	UE_LOG(LogTimeDilationHelper, Log, TEXT("LocalPing[%f] LastServerCommandBufferNum[%f] State[%s]"), LocalPing, LastServerCommandBufferNum, *(Enum->GetNameStringByValue((int64)TimeDilationAdaptStage)));
+#if WITH_EDITOR
+	if (WorldContext->GetNetMode() == NM_Client)
+	{
+		if (!DebugProxy_StateText.IsValid())
+		{
+			DebugProxy_StateText = FCFrameSimpleDebugText::CreateDebugProxy(FName(TEXT("TimeDilationHelper")), LOCTEXT("Debug", "State[Unkown]"), 20, FVector2f(1.0f, 1.0f), FColor::Green);
+		}
+
+		const UEnum* Enum = StaticEnum<ETimeDilationAdaptStage>();
+		//UE_LOG(LogTimeDilationHelper, Log, TEXT("LocalPing[%f] LastServerCommandBufferNum[%f] State[%s]"), LocalPing, LastServerCommandBufferNum, *(Enum->GetNameStringByValue((int64)TimeDilationAdaptStage)));
+		DebugProxy_StateText->UpdateText(FText::FromString(FString::Printf(TEXT("State[%s]"), *(Enum->GetNameStringByValue((int64)TimeDilationAdaptStage)))));
+	}
+#endif
 
 	switch (TimeDilationAdaptStage)
 	{
@@ -198,3 +245,5 @@ float FTimeDilationHelper::GetLocalPing(UWorld* WorldContext)
 
 	return 0;
 }
+
+#undef LOCTEXT_NAMESPACE

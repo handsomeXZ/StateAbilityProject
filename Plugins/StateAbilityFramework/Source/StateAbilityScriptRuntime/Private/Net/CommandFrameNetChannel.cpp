@@ -11,7 +11,7 @@ PRIVATE_DEFINE_NAMESPACE(ADefaultCommandFrameNetChannel, FBitReader, Pos)
 namespace DeltaNetPacketUtils
 {
 	template<>
-	void NetSerialize<EDeltaNetPacketType::Movement>(FCommandFrameDeltaNetPacket& NetPacket, FArchive& Ar, UPackageMap* Map, bool& bOutSuccess)
+	void NetSync<EDeltaNetPacketType::Movement>(const FCommandFrameDeltaNetPacket& NetPacket, FArchive& Ar, UPackageMap* Map, bool& bOutSuccess)
 	{
 		if (!NetPacket.NetChannel)
 		{
@@ -20,7 +20,19 @@ namespace DeltaNetPacketUtils
 		if (ICommandFrameNetProcedure* Procedure = NetPacket.NetChannel->GetNetPacketProcedure(EDeltaNetPacketType::Movement))
 		{
 			FNetProcedureSyncParam SyncParam(NetPacket, Ar, Map, bOutSuccess);
-			Procedure->OnNetSync(SyncParam);
+			if (Ar.IsSaving())
+			{
+				Procedure->OnServerNetSync(SyncParam);
+			}
+			else if (Ar.IsLoading())
+			{
+				bool bNeedRewind = false;
+				Procedure->OnClientNetSync(SyncParam, bNeedRewind);
+				if (bNeedRewind)
+				{
+					NetPacket.NetChannel->RewindFrame();
+				}
+			}
 		}
 		else
 		{
@@ -29,7 +41,7 @@ namespace DeltaNetPacketUtils
 	}
 
 	template<>
-	void NetSerialize<EDeltaNetPacketType::StateAbilityScript>(FCommandFrameDeltaNetPacket& NetPacket, FArchive& Ar, UPackageMap* Map, bool& bOutSuccess)
+	void NetSync<EDeltaNetPacketType::StateAbilityScript>(const FCommandFrameDeltaNetPacket& NetPacket, FArchive& Ar, UPackageMap* Map, bool& bOutSuccess)
 	{
 		if (!NetPacket.NetChannel)
 		{
@@ -38,7 +50,19 @@ namespace DeltaNetPacketUtils
 		if (ICommandFrameNetProcedure* Procedure = NetPacket.NetChannel->GetNetPacketProcedure(EDeltaNetPacketType::StateAbilityScript))
 		{
 			FNetProcedureSyncParam SyncParam(NetPacket, Ar, Map, bOutSuccess);
-			Procedure->OnNetSync(SyncParam);
+			if (Ar.IsSaving())
+			{
+				Procedure->OnServerNetSync(SyncParam);
+			}
+			else if (Ar.IsLoading())
+			{
+				bool bNeedRewind = false;
+				Procedure->OnClientNetSync(SyncParam, bNeedRewind);
+				if (bNeedRewind)
+				{
+					NetPacket.NetChannel->RewindFrame();
+				}
+			}
 		}
 		else
 		{
@@ -128,7 +152,7 @@ void ADefaultCommandFrameNetChannel::ServerReceive_CommandFrameInputNetPacket_Im
 		APlayerController* PC = GetOwner<APlayerController>();
 		APlayerState* PS = PC->GetPlayerState<APlayerState>();
 
-		GetCommandFrameManager()->ReceiveInput(PS->GetUniqueId(), InputNetPacket);
+		GetCommandFrameManager()->ReceiveInput(this, PS->GetUniqueId(), InputNetPacket);
 
 		// 异常情况处理
 		// 1. 客户端CF过期，且BufferNum == 0。此时需要同步所有状态。
@@ -169,10 +193,11 @@ void ADefaultCommandFrameNetChannel::ClientReceive_CommandFrameDeltaNetPacket_Im
 
 	UE_LOG(LogCommandFrameNetChannel, Verbose, TEXT("ClientReceive SCF[%d] Prev[%d] LocalLast[%d]"), DeltaNetPacket.ServerCommandFrame, DeltaNetPacket.PrevServerCommandFrame, LastServerCommandFrame);
 	
-	FBitReader BitReader;
-	BitReader.SetData((uint8*)DeltaNetPacket.RawData.GetData(), DeltaNetPacket.RawData.Num());
+	FNetBitReader NetBitReader;
+	NetBitReader.PackageMap = DeltaNetPacket.PackageMap;
+	NetBitReader.SetData((uint8*)DeltaNetPacket.RawData.GetData(), DeltaNetPacket.RawData.Num());
 
-	ProcessDeltaPrefix(DeltaNetPacket, BitReader);
+	ProcessDeltaPrefix(DeltaNetPacket, NetBitReader);
 
 	// 本地第0帧为无效帧，无条件接受
 	if (LastServerCommandFrame < DeltaNetPacket.PrevServerCommandFrame && LastServerCommandFrame != 0)
@@ -182,8 +207,10 @@ void ADefaultCommandFrameNetChannel::ClientReceive_CommandFrameDeltaNetPacket_Im
 	}
 	else if(LastServerCommandFrame == DeltaNetPacket.PrevServerCommandFrame || LastServerCommandFrame == 0)
 	{
-		ProcessDeltaPackaged(DeltaNetPacket, BitReader);
+		// ProcessDeltaPackaged(DeltaNetPacket, NetBitReader);
 
+		// 即使是没乱序的包，也需要入队列，这样可以避免在接收RPC的处理时间过长。可以参考Iris
+		UnorderedPackets.Add(DeltaNetPacket.PrevServerCommandFrame, DeltaNetPacket);
 	}
 	else
 	{
@@ -191,34 +218,31 @@ void ADefaultCommandFrameNetChannel::ClientReceive_CommandFrameDeltaNetPacket_Im
 	}
 }
 
-void ADefaultCommandFrameNetChannel::ProcessDeltaPrefix(const FCommandFrameDeltaNetPacket& DeltaNetPacket, FBitReader& BitReader)
+void ADefaultCommandFrameNetChannel::ProcessDeltaPrefix(const FCommandFrameDeltaNetPacket& DeltaNetPacket, FNetBitReader& NetBitReader)
 {
 	if (DeltaNetPacket.bLocal && IsValid(GetCommandFrameManager()))
 	{
-		bool bFault = false;
-		int32 PrefixDataSize = 0;
-		uint32 ServerCommandBufferNum = 0;
+		bool bOutSuccess = true;
+		auto Func = [&DeltaNetPacket, this](int32 PrefixDataSize, uint32 ServerCommandBufferNum, bool bFault) {
+			uint32 RealCommandFrame = GetCommandFrameManager()->GetRCF();
+			if (RealCommandFrame <= DeltaNetPacket.ServerCommandFrame)
+			{
+				// 严重落后，直接修改帧号
+				ResetCommandFrame(DeltaNetPacket.ServerCommandFrame, DeltaNetPacket.PrevServerCommandFrame);
 
-		BitReader << PrefixDataSize;
-		BitReader << bFault;
-		BitReader << ServerCommandBufferNum;
+				return;
+			}
 
-		uint32 RealCommandFrame = GetCommandFrameManager()->GetRCF();
-		if (RealCommandFrame <= DeltaNetPacket.ServerCommandFrame)
-		{
-			// 严重落后，直接修改帧号
-			ResetCommandFrame(DeltaNetPacket.ServerCommandFrame, DeltaNetPacket.PrevServerCommandFrame);
+			GetCommandFrameManager()->UpdateTimeDilationHelper(ServerCommandBufferNum, bFault);
+		};
 
-			return;
-		}
-
-		GetCommandFrameManager()->UpdateTimeDilationHelper(ServerCommandBufferNum, bFault);
+		DeltaNetPacketUtils::SerializeDeltaPrefix(DeltaNetPacket, NetBitReader, NetBitReader.PackageMap, bOutSuccess, Func);
 	}
 
-	PRIVATE_GET_NAMESPACE(ADefaultCommandFrameNetChannel, &BitReader, Pos) = 0;
+	PRIVATE_GET_NAMESPACE(ADefaultCommandFrameNetChannel, &NetBitReader, Pos) = 0;
 }
 
-void ADefaultCommandFrameNetChannel::ProcessDeltaPackaged(const FCommandFrameDeltaNetPacket& DeltaNetPacket, FBitReader& BitReader)
+void ADefaultCommandFrameNetChannel::ProcessDeltaPackaged(const FCommandFrameDeltaNetPacket& DeltaNetPacket, FNetBitReader& NetBitReader)
 {
 	UE_LOG(LogCommandFrameNetChannel, Verbose, TEXT("Change LocalLast From[%d] To[%d]"), LastServerCommandFrame, DeltaNetPacket.ServerCommandFrame);
 	LastServerCommandFrame = DeltaNetPacket.ServerCommandFrame;
@@ -230,6 +254,28 @@ void ADefaultCommandFrameNetChannel::ProcessDeltaPackaged(const FCommandFrameDel
 		GetCommandFrameManager()->ClientReceiveCommandAck(DeltaNetPacket.ServerCommandFrame);
 	}
 
+	bool bOutSuccess = true;
+	int32 OutPrefixDataSize = 0;
+	DeltaNetPacketUtils::SerializeDeltaPrefix(DeltaNetPacket, NetBitReader, NetBitReader.PackageMap, bOutSuccess, [&OutPrefixDataSize](int32 PrefixDataSize, uint32 ServerCommandBufferNum, bool bFault) {
+		OutPrefixDataSize = PrefixDataSize;
+	});
+	PRIVATE_GET_NAMESPACE(ADefaultCommandFrameNetChannel, &NetBitReader, Pos) = OutPrefixDataSize;
+
+	DeltaNetPacketUtils::SerializeDeltaPackaged(DeltaNetPacket, NetBitReader, NetBitReader.PackageMap, bOutSuccess);
+	if (NetChannelState == ECommandFrameNetChannelState::WaitRewind)
+	{
+		// Rewinding...
+		for (auto& ProcedurePair : NetPacketProcedures)
+		{
+			if (ProcedurePair.Value.IsValid())
+			{
+				ICommandFrameNetProcedure* NetProcedure = (ICommandFrameNetProcedure*)(ProcedurePair.Value->GetNativeInterfaceAddress(UCommandFrameNetProcedure::StaticClass()));
+				NetProcedure->OnClientRewind();
+			}
+		}
+	}
+
+	NetChannelState = ECommandFrameNetChannelState::Normal;
 
 	// 处理乱序包
 	RemoveUnorderedPacket(DeltaNetPacket.PrevServerCommandFrame);
@@ -240,9 +286,9 @@ void ADefaultCommandFrameNetChannel::VerifyUnorderedPackets()
 {
 	while (FCommandFrameDeltaNetPacket* PacketPtr = UnorderedPackets.Find(LastServerCommandFrame))
 	{
-		FBitReader BitReader;
-		BitReader.SetData((uint8*)PacketPtr->RawData.GetData(), PacketPtr->RawData.Num());
-		ProcessDeltaPackaged(*PacketPtr, BitReader);
+		FNetBitReader NetBitReader;
+		NetBitReader.SetData((uint8*)PacketPtr->RawData.GetData(), PacketPtr->RawData.Num());
+		ProcessDeltaPackaged(*PacketPtr, NetBitReader);
 	}
 }
 

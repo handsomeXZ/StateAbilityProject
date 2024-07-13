@@ -76,6 +76,7 @@ public:
 	void UpdateTimeDilationHelper(uint32 ServerCommandBufferNum, bool bFault);
 	void ResetCommandFrame(uint32 CommandFrame);
 	bool HasManagerPrepared();
+	
 	FTickFunction& GetTickFuntion() { return CommandFrameTickFunction; }
 	uint32 GetRCF() { return RealCommandFrame; }
 	uint32 GetICF() { return InternalCommandFrame; }
@@ -102,6 +103,16 @@ public:
 	void FlushCommandFrame_Fixed(float DeltaTime);
 
 	//////////////////////////////////////////////////////////////////////////
+	// Rewind
+	void ReplayFrames(uint32 RewindedFrame);
+	bool IsInRewinding();
+
+	//////////////////////////////////////////////////////////////////////////
+	// Input
+
+	void SimulateInput(uint32 CommandFrame);
+	// @TODO：轮询开销太大了
+	void BuildInputEventMap(APlayerController* PC, TMap<const UInputAction*, TArray<TUniquePtr<FEnhancedInputActionEventBinding>>>& InputEventMap);
 
 	TJOwnerShipCircularQueue<FCommandFrameInputFrame, FUniqueNetIdRepl, TArray<FCommandFrameInputAtom>> CommandBuffer;
 
@@ -110,7 +121,7 @@ public:
 
 	APlayerController* GetLocalPlayerController();
 	void UpdateLocalHistoricalData();
-	void ClientSendInputNetPacket();
+	void ClientSendInputNetPacket(APlayerController* PC);
 	void ClientReceiveCommandAck(uint32 ServerCommandFrame);
 
 	TJOwnerShipCircularQueue<FCommandFrameAttributeSnapshot, UScriptStruct*, uint8*> AttributeSnapshotBuffer;
@@ -118,12 +129,8 @@ public:
 	//////////////////////////////////////////////////////////////////////////
 	// Server
 
-	void ReceiveInput(const FUniqueNetIdRepl& NetId, const FCommandFrameInputNetPacket& InputNetPacket);
+	void ReceiveInput(ACommandFrameNetChannelBase* Channel, const FUniqueNetIdRepl& NetId, const FCommandFrameInputNetPacket& InputNetPacket);
 	void ConsumeInput();
-	void SimulateInput(uint32 CommandFrame);
-
-	// @TODO：轮询开销太大了
-	void BuildInputEventMap(APlayerController* PC, TMap<const UInputAction*, TArray<TUniquePtr<FEnhancedInputActionEventBinding>>>& InputEventMap);
 
 	void ServerSendDeltaNetPacket();
 	uint32 GetCurCommandBufferNum(const FUniqueNetIdRepl& Owner);
@@ -141,4 +148,12 @@ private:
 	TObjectPtr<ACommandFrameNetChannelBase> LocalNetChannel;
 	UPROPERTY()
 	TMap<AController*, ACommandFrameNetChannelBase*> NetChannels;
+
+	TMap<const FUniqueNetIdRepl, TMap<const UInputAction*, TArray<TUniquePtr<FEnhancedInputActionEventBinding>>>> InputProcedureCache;
+
+	//////////////////////////////////////////////////////////////////////////
+	// Debug
+#if WITH_EDITOR
+	TSharedPtr<struct FCFrameSimpleDebugChart> DebugProxy_ClientCmdBufferChart;
+#endif
 };

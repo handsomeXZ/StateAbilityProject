@@ -19,6 +19,7 @@ enum class ECommandFrameNetChannelState : uint8
 	Unkown,
 	Normal,		// 正常
 	WaitCatch,	// Server等待Client追赶
+	WaitRewind, // Client即将执行Rewind
 };
 
 /**
@@ -36,6 +37,7 @@ class ADefaultCommandFrameNetChannel : public ACommandFrameNetChannelBase
 public:
 	//virtual bool IsNetRelevantFor(const AActor* RealViewer, const AActor* ViewTarget, const FVector& SrcLocation) const override;
 	virtual void BeginPlay() override;
+	virtual void RewindFrame() { NetChannelState = ECommandFrameNetChannelState::WaitRewind; }
 
 	virtual void FixedTick(float DeltaTime, uint32 RCF, uint32 ICF) override;
 	virtual void RegisterCFrameManager(UCommandFrameManager* CommandFrameManager) override { CFrameManager = CommandFrameManager; }
@@ -58,12 +60,12 @@ private:
 
 	//////////////////////////////////////////////////////////////////////////
 	// 处理数据包前缀（只要收到数据就处理，不保证有序）
-	void ProcessDeltaPrefix(const FCommandFrameDeltaNetPacket& DeltaNetPacket, FBitReader& BitReader);
+	void ProcessDeltaPrefix(const FCommandFrameDeltaNetPacket& DeltaNetPacket, FNetBitReader& NetBitReader);
 	void ResetCommandFrame(uint32 ServerCommandFrame, uint32 PrevServerCommandFrame);
 
 	//////////////////////////////////////////////////////////////////////////
 	// 处理数据包主体（仅处理有序的数据包）
-	void ProcessDeltaPackaged(const FCommandFrameDeltaNetPacket& DeltaNetPacket, FBitReader& BitReader);
+	void ProcessDeltaPackaged(const FCommandFrameDeltaNetPacket& DeltaNetPacket, FNetBitReader& NetBitReader);
 
 	//////////////////////////////////////////////////////////////////////////
 	// 处理乱序包
@@ -92,8 +94,8 @@ private:
 namespace DeltaNetPacketUtils
 {
 	template<>
-	void NetSerialize<EDeltaNetPacketType::Movement>(FCommandFrameDeltaNetPacket& NetPacket, FArchive& Ar, UPackageMap* Map, bool& bOutSuccess);
+	void NetSync<EDeltaNetPacketType::Movement>(const FCommandFrameDeltaNetPacket& NetPacket, FArchive& Ar, UPackageMap* Map, bool& bOutSuccess);
 
 	template<>
-	void NetSerialize<EDeltaNetPacketType::StateAbilityScript>(FCommandFrameDeltaNetPacket& NetPacket, FArchive& Ar, UPackageMap* Map, bool& bOutSuccess);
+	void NetSync<EDeltaNetPacketType::StateAbilityScript>(const FCommandFrameDeltaNetPacket& NetPacket, FArchive& Ar, UPackageMap* Map, bool& bOutSuccess);
 }

@@ -90,7 +90,7 @@ void UCFrameMoveModeStateMachine::FixedTick(float DeltaTime, uint32 RCF, uint32 
 
 	UCFrameMoveStateAdapter* MoveStateAdapter = Context.MoveStateAdapter;
 
-	if (!Context.IsValid())
+	if (!Context.IsDataValid())
 	{
 		return;
 	}
@@ -126,7 +126,7 @@ void UCFrameMoveModeStateMachine::RecordMovementSnapshot()
 	UCFrameMoveStateAdapter* MoveStateAdapter = Context.MoveStateAdapter;
 
 	// 此时正在回滚并重新模拟，无需重新记录快照
-	if (Context.RCF != Context.ICF)
+	if (CFrameManager->IsInRewinding())
 	{
 		return;
 	}

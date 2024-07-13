@@ -17,13 +17,21 @@ public:
 	FCommandFrameInputAtom(float InLastTriggeredWorldTime, float InElapsedProcessedTime, float InElapsedTriggeredTime, const UInputAction* InInputAction, ETriggerEvent InTriggerEvent, const FInputActionValue& InValue);
 	FCommandFrameInputAtom(const FInputActionInstance& ActionData);
 
+	// @TODO：在序列化数据前，遍历所有Atom并执行。这种能提高多少速度？
+	// 尝试将存储的数据转为a single memory blob，或者说是POD？
+	void BulkMemoryBlob(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess);
+
 	bool Serialize(FArchive& Ar);
 	bool NetSerialize(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess);
 
 	// 对于有可靠地址的InputAction，网络同步时是直接传递的ObjectPath，可以通过LoadObject查到。
-	// 但是直接传输FString路径是有开销的 (FName受限于NamePool，在 C/S 不相同)，所以理想情况下，可以在每次序列化数据时，查找NetGuid，如果不存在，则继续序列化路径，并利用 1个bit 来记录类型。
-	// 当服务器收到Input包后，会解析是否存在NetGuid，如果不存在，则会在Delta包内回传InputAction，帮助建立NetGuid映射。
-	const UInputAction* InputAction = nullptr;
+	// 但是直接传输FString路径是有开销的 (FName受限于NamePool，在 C/S 不相同)，所以理想情况下，可以在每次序列化数据时，查找FNetworkGUID，如果不存在，则继续序列化路径，并利用 1个bit 来记录类型。
+	// 当服务器收到Input包后，会解析是否存在FNetworkGUID，如果不存在，则会在Delta包内回传InputAction，帮助建立FNetworkGUID映射。
+	union
+	{
+		const UInputAction* InputAction;
+		FNetworkGUID IA_NetGUID;
+	};
 
 	// Trigger state
 	ETriggerEvent TriggerEvent = ETriggerEvent::None;

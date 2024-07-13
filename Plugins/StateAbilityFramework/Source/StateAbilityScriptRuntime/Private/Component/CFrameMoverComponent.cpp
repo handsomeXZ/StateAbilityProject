@@ -198,76 +198,85 @@ void UCFrameMoverComponent::OnHandleImpact(const FHitResult& Hit, const FName Mo
 	// 可以参考 UCharacterMovementComponent::HandleImpact
 }
 
-void UCFrameMoverComponent::OnNetSync(FNetProcedureSyncParam& SyncParam)
+void UCFrameMoverComponent::OnServerNetSync(FNetProcedureSyncParam& SyncParam)
 {
 	UCFrameMoveStateAdapter* Adapter = MovementConfig.MoveStateAdapter;
 	FArchive& Ar = SyncParam.Ar;
 	UPackageMap* Map = SyncParam.Map;
 	bool& bOutSuccess = SyncParam.bOutSuccess;
 	
-	if (Ar.IsSaving())
+	FVector Location = Adapter->GetLocation_WorldSpace();
+	FVector Velocity = Adapter->GetVelocity_WorldSpace();
+	SerializePackedVector<100, 30>(Location, Ar);
+	SerializePackedVector<10, 16>(Velocity, Ar);
+	Adapter->GetOrientation_WorldSpace().SerializeCompressedShort(Ar);
+
+
+	UPrimitiveComponent* MovementBase = Adapter->GetMovementBase();
+	FName MovementBaseBoneName = Adapter->GetMovementBaseBoneName();
+	//FVector MovementBasePos = Adapter->GetMovementBasePos();
+	//FQuat MovementBaseQuat = Adapter->GetMovementBaseQuat();
+
+	// Optional movement base
+	bool bIsUsingMovementBase = MovementBase != nullptr;
+	Ar.SerializeBits(&bIsUsingMovementBase, 1);
+
+	if (bIsUsingMovementBase)
 	{
-		FVector Location = Adapter->GetLocation_WorldSpace();
-		FVector Velocity = Adapter->GetVelocity_WorldSpace();
-		SerializePackedVector<100, 30>(Location, Ar);
-		SerializePackedVector<10, 16>(Velocity, Ar);
-		Adapter->GetOrientation_WorldSpace().SerializeCompressedShort(Ar);
+		Ar << MovementBase;
+		Ar << MovementBaseBoneName;	// @TODO：传递FName等同于传递FString，挺浪费的
 
-		
-		UPrimitiveComponent* MovementBase = Adapter->GetMovementBase();
-		FName MovementBaseBoneName = Adapter->GetMovementBaseBoneName();
-		//FVector MovementBasePos = Adapter->GetMovementBasePos();
-		//FQuat MovementBaseQuat = Adapter->GetMovementBaseQuat();
+		//SerializePackedVector<100, 30>(MovementBasePos, Ar);
+		//MovementBaseQuat.NetSerialize(Ar, Map, bOutSuccess);
+	}
+}
 
-		// Optional movement base
-		bool bIsUsingMovementBase = MovementBase != nullptr;
-		Ar.SerializeBits(&bIsUsingMovementBase, 1);
+void UCFrameMoverComponent::OnClientNetSync(FNetProcedureSyncParam& SyncParam, bool& bNeedRewind)
+{
+	UCFrameMoveStateAdapter* Adapter = MovementConfig.MoveStateAdapter;
+	FArchive& Ar = SyncParam.Ar;
+	UPackageMap* Map = SyncParam.Map;
+	bool& bOutSuccess = SyncParam.bOutSuccess;
 
-		if (bIsUsingMovementBase)
+
+	FVector Location;
+	FVector Velocity;
+	FRotator Orientation;
+	SerializePackedVector<100, 30>(Location, Ar);
+	SerializePackedVector<10, 16>(Velocity, Ar);
+	Orientation.SerializeCompressedShort(Ar);
+
+	// Optional movement base
+	bool bIsUsingMovementBase;
+	Ar.SerializeBits(&bIsUsingMovementBase, 1);
+
+	UPrimitiveComponent* MovementBase = nullptr;
+	FName MovementBaseBoneName = NAME_None;
+	//FVector MovementBasePos;
+	//FQuat MovementBaseQuat;
+
+	if (bIsUsingMovementBase)
+	{
+		Ar << MovementBase;
+		Ar << MovementBaseBoneName;
+
+		//SerializePackedVector<100, 30>(MovementBasePos, Ar);
+		//MovementBaseQuat.NetSerialize(Ar, Map, bOutSuccess);
+	}
+
+	if (CheckClientExceedsAllowablePositionError(Location))
+	{
+		if (SyncParam.NetPacket.bLocal)
 		{
-			Ar << MovementBase;
-			Ar << MovementBaseBoneName;	// @TODO：传递FName等同于传递FString，挺浪费的
-
-			//SerializePackedVector<100, 30>(MovementBasePos, Ar);
-			//MovementBaseQuat.NetSerialize(Ar, Map, bOutSuccess);
+			AdjustClientPosition(Location, Velocity, Orientation, MovementBase, MovementBaseBoneName);
+			bNeedRewind = true;
 		}
 	}
-	else if (Ar.IsLoading())
-	{
-		FVector Location;
-		FVector Velocity;
-		FRotator Orientation;
-		SerializePackedVector<100, 30>(Location, Ar);
-		SerializePackedVector<10, 16>(Velocity, Ar);
-		Orientation.SerializeCompressedShort(Ar);
+}
 
-		// Optional movement base
-		bool bIsUsingMovementBase;
-		Ar.SerializeBits(&bIsUsingMovementBase, 1);
-		
-		UPrimitiveComponent* MovementBase = nullptr;
-		FName MovementBaseBoneName = NAME_None;
-		//FVector MovementBasePos;
-		//FQuat MovementBaseQuat;
-
-		if (bIsUsingMovementBase)
-		{
-			Ar << MovementBase;
-			Ar << MovementBaseBoneName;
-
-			//SerializePackedVector<100, 30>(MovementBasePos, Ar);
-			//MovementBaseQuat.NetSerialize(Ar, Map, bOutSuccess);
-		}
-
-		if (CheckClientExceedsAllowablePositionError(Location))
-		{
-			if (SyncParam.NetPacket.bLocal)
-			{
-				AdjustClientPosition(Location, Velocity, Orientation, MovementBase, MovementBaseBoneName);
-
-			}
-		}
-	}
+void UCFrameMoverComponent::OnClientRewind()
+{
+	
 }
 
 bool UCFrameMoverComponent::CheckClientExceedsAllowablePositionError(const FVector& ServerWorldLocation)

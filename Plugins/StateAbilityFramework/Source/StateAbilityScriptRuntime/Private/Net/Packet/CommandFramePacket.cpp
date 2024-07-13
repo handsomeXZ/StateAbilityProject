@@ -67,8 +67,82 @@ namespace DeltaNetPacketUtils
 		Packet.PacketType = (EDeltaNetPacketType)(Packet.PacketType & EDeltaNetPacketType::Fault_FrameExpiry);
 	}
 
+	void SerializeDeltaPrefix(const FCommandFrameDeltaNetPacket& NetPacket, FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess, FPrefixCallBackFunc CallBack)
+	{
+		int32 PrefixDataSize = 0;
+		uint32 ServerCommandBufferNum = 0;
+		bool bFault = false;
+
+		// 非Local暂时没有Prefix
+		if (!NetPacket.bLocal)
+		{
+			return;
+		}
+
+		if (Ar.IsSaving())
+		{
+			bFault = NetPacket.PacketType & 0xF0000000;
+
+			FBitArchiveSizeScope Scope(Ar, PrefixDataSize);
+			UCommandFrameManager* CFManager = NetPacket.NetChannel->GetWorld()->GetSubsystem<UCommandFrameManager>();
+			APlayerController* PC = Cast<APlayerController>(NetPacket.NetChannel->GetNetConnection()->OwningActor);
+			APlayerState* PS = PC->GetPlayerState<APlayerState>();
+
+			ServerCommandBufferNum = CFManager->GetCurCommandBufferNum(PS->GetUniqueId());
+
+			Ar << ServerCommandBufferNum;
+			Ar << bFault;
+
+			if (CallBack)
+			{
+				CallBack(PrefixDataSize, ServerCommandBufferNum, bFault);
+			}
+		}
+		else if (Ar.IsLoading())
+		{
+			Ar << PrefixDataSize;
+			Ar << ServerCommandBufferNum;
+			Ar << bFault;
+
+			if (CallBack)
+			{
+				CallBack(PrefixDataSize, ServerCommandBufferNum, bFault);
+			}
+		}
+	}
+
+	void SerializeDeltaPackaged(const FCommandFrameDeltaNetPacket& NetPacket, FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess)
+	{
+		if (NetPacket.PacketType & EDeltaNetPacketType::Movement)
+		{
+			DeltaNetPacketUtils::NetSync<EDeltaNetPacketType::Movement>(NetPacket, Ar, Map, bOutSuccess);
+			if (!bOutSuccess)
+			{
+				return;
+			}
+		}
+
+		if (NetPacket.PacketType & EDeltaNetPacketType::StateAbilityScript)
+		{
+			DeltaNetPacketUtils::NetSync<EDeltaNetPacketType::StateAbilityScript>(NetPacket, Ar, Map, bOutSuccess);
+			if (!bOutSuccess)
+			{
+				return;
+			}
+		}
+
+		if (NetPacket.PacketType & EDeltaNetPacketType::Fault_FrameExpiry)
+		{
+			DeltaNetPacketUtils::NetSync<EDeltaNetPacketType::Fault_FrameExpiry>(NetPacket, Ar, Map, bOutSuccess);
+			if (!bOutSuccess)
+			{
+				return;
+			}
+		}
+	}
+
 	template<>
-	void NetSerialize<EDeltaNetPacketType::Fault_FrameExpiry>(FCommandFrameDeltaNetPacket& NetPacket, FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess)
+	void NetSync<EDeltaNetPacketType::Fault_FrameExpiry>(const FCommandFrameDeltaNetPacket& NetPacket, FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess)
 	{
 		if (NetPacket.bLocal)
 		{
@@ -111,6 +185,10 @@ bool FCommandFrameDeltaNetPacket::NetSerialize(FArchive& Ar, class UPackageMap* 
 		UNetConnection* OwnerConnection = NetChannel->GetNetConnection();
 		bLocal = NetConnection == OwnerConnection;
 	}
+	else if (Ar.IsLoading())
+	{
+		PackageMap = Map;
+	}
 
 	Ar << ServerCommandFrame;
 	Ar << PrevServerCommandFrame;
@@ -120,7 +198,6 @@ bool FCommandFrameDeltaNetPacket::NetSerialize(FArchive& Ar, class UPackageMap* 
 	Ar << IntPacketType;
 
 	Ar << bLocal;
-	Ar << PackageMap;
 
 	if (Ar.IsLoading())
 	{
@@ -133,54 +210,18 @@ bool FCommandFrameDeltaNetPacket::NetSerialize(FArchive& Ar, class UPackageMap* 
 		NetBitWriter.PackageMap = PackageMap;
 		NetBitWriter.SetAllowResize(true);
 
-		int32 PrefixDataSize = 0;
-		if (bLocal)
-		{
-			FBitArchiveSizeScope Scope(NetBitWriter, PrefixDataSize);
-
-			bool bFault = PacketType & 0xF0000000;
-			uint32 ServerCommandBufferNum = 0;
-
-			UCommandFrameManager* CFManager = NetChannel->GetWorld()->GetSubsystem<UCommandFrameManager>();
-			APlayerController* PC = Cast<APlayerController>(NetChannel->GetNetConnection()->OwningActor);
-			APlayerState* PS = PC->GetPlayerState<APlayerState>();
-
-			ServerCommandBufferNum = CFManager->GetCurCommandBufferNum(PS->GetUniqueId());
-
-			NetBitWriter << bFault;
-			NetBitWriter << ServerCommandBufferNum;
-		}
+		DeltaNetPacketUtils::SerializeDeltaPrefix(*this, NetBitWriter, Map, bOutSuccess);
 
 		if (RawData.IsEmpty())
 		{
 			bOutSuccess = true;
 
-			if (PacketType & EDeltaNetPacketType::Movement)
-			{
-				DeltaNetPacketUtils::NetSerialize<EDeltaNetPacketType::Movement>(*this, NetBitWriter, Map, bOutSuccess);
-				if (!bOutSuccess)
-				{
-					return false;
-				}
-			}
+			DeltaNetPacketUtils::SerializeDeltaPackaged(*this, NetBitWriter, Map, bOutSuccess);
+		}
 
-			if (PacketType & EDeltaNetPacketType::StateAbilityScript)
-			{
-				DeltaNetPacketUtils::NetSerialize<EDeltaNetPacketType::StateAbilityScript>(*this, NetBitWriter, Map, bOutSuccess);
-				if (!bOutSuccess)
-				{
-					return false;
-				}
-			}
-
-			if (PacketType & EDeltaNetPacketType::Fault_FrameExpiry)
-			{
-				DeltaNetPacketUtils::NetSerialize<EDeltaNetPacketType::Fault_FrameExpiry>(*this, NetBitWriter, Map, bOutSuccess);
-				if (!bOutSuccess)
-				{
-					return false;
-				}
-			}
+		if (!bOutSuccess)
+		{
+			return false;
 		}
 
 		RawData.SetNumUninitialized(NetBitWriter.GetNumBits());
@@ -214,10 +255,10 @@ bool FCommandFrameDeltaNetPacket::NetSerialize(FArchive& Ar, class UPackageMap* 
 
 //////////////////////////////////////////////////////////////////////////
 // FCommandFrameInputNetPacket
-FCommandFrameInputNetPacket::FCommandFrameInputNetPacket(TCircularQueueView<FCommandFrameInputFrame>& InputFrames)
+FCommandFrameInputNetPacket::FCommandFrameInputNetPacket(UNetConnection* Connection, TCircularQueueView<FCommandFrameInputFrame>& InputFrames)
 	: ClientCommandFrame(0)
 {
-	WriteRedundantData(InputFrames);
+	WriteRedundantData(Connection, InputFrames);
 }
 
 bool FCommandFrameInputNetPacket::NetSerialize(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess)
@@ -240,7 +281,7 @@ bool FCommandFrameInputNetPacket::NetSerialize(FArchive& Ar, class UPackageMap* 
 	return !Ar.IsError();
 }
 
-void FCommandFrameInputNetPacket::WriteRedundantData(TCircularQueueView<FCommandFrameInputFrame>& InputFrames)
+void FCommandFrameInputNetPacket::WriteRedundantData(UNetConnection* Connection, TCircularQueueView<FCommandFrameInputFrame>& InputFrames)
 {
 	if (!InputFrames.IsEmpty())
 	{
@@ -259,29 +300,39 @@ void FCommandFrameInputNetPacket::WriteRedundantData(TCircularQueueView<FCommand
 	{
 		FCommandFrameInputFrame& InputFrame = InputFrames[Index];
 
-		FBitWriter& BitWriter = InputFrame.SharedSerialization;
+		FNetBitWriter& NetBitWriter = InputFrame.SharedSerialization;
+		NetBitWriter.PackageMap = Connection->PackageMap;
 
-		if (!BitWriter.GetNumBits())
+		if (!NetBitWriter.GetNumBits())
 		{
-			BitWriter << InputFrame.CommandFrame;
+			NetBitWriter << InputFrame.CommandFrame;
 
 			int32 DataCount = InputFrame.InputQueue.Num();
 
-			BitWriter << DataCount;
+			NetBitWriter << DataCount;
 
 			int32 DataSize = 0;
 			{
-				FBitArchiveSizeScope Scope(BitWriter, DataSize);
+				FBitArchiveSizeScope Scope(NetBitWriter, DataSize);
 
-				BitWriter.SerializeBits(InputFrame.InputQueue.GetData(), InputFrame.InputQueue.GetTypeSize() * DataCount);
+				// GetTypeSize() 返回字节数，实际需要bit数，所以*8
+				// 但FCommandFrameInputAtom目前内部包含UObject，不能直接拷贝，只有启用了FNetworkGUID，才能直接拷贝
+				//NetBitWriter.SerializeBits(InputFrame.InputQueue.GetData(), InputFrame.InputQueue.GetTypeSize() * DataCount * 8);
+				
+				bool bOutSuccess = false;
+				UScriptStruct* InputAtomStruct = FCommandFrameInputAtom::StaticStruct();
+				for (FCommandFrameInputAtom& InputAtom : InputFrame.InputQueue)
+				{
+					InputAtomStruct->GetCppStructOps()->NetSerialize(NetBitWriter, NetBitWriter.PackageMap, bOutSuccess, &InputAtom);
+				}
 			}
 
-			UE_LOG(LogCommandFrameNetPacket, Verbose, TEXT("WriteRedundantData Frame[%d] DataCount[%d] DataSize[%d]"), InputFrame.CommandFrame, DataCount, DataSize);
+			UE_LOG(LogCommandFrameNetPacket, Log, TEXT("WriteRedundantData Frame[%d] DataCount[%d] DataSize[%d]"), InputFrame.CommandFrame, DataCount, DataSize);
 		}
-		TotalNumBits += BitWriter.GetNumBits();
+		TotalNumBits += NetBitWriter.GetNumBits();
 	}
 
-	UE_LOG(LogCommandFrameNetPacket, Verbose, TEXT("WriteRedundantData Allocate RawData[%d]"), TotalNumBits);
+	UE_LOG(LogCommandFrameNetPacket, Log, TEXT("WriteRedundantData Allocate RawData[%d]"), TotalNumBits);
 	RawData.SetNumUninitialized(TotalNumBits);
 
 	check(RawData.Num() >= TotalNumBits);
@@ -301,9 +352,10 @@ void FCommandFrameInputNetPacket::WriteRedundantData(TCircularQueueView<FCommand
 	UE_LOG(LogCommandFrameNetPacket, Verbose, TEXT("WriteRedundantData End"));
 }
 
-void FCommandFrameInputNetPacket::ReadRedundantData(TFunction<FCommandFrameInputAtom * (uint32 CommandFrame, int32 DataCount)> AllocateData) const
+void FCommandFrameInputNetPacket::ReadRedundantData(UNetConnection* Connection, TFunction<uint8*(uint32 CommandFrame, int32 DataCount)> AllocateData) const
 {
-	FBitReader Ar;
+	FNetBitReader Ar;
+	Ar.PackageMap = Connection->PackageMap;
 	Ar.SetData((uint8*)RawData.GetData(), RawData.Num());
 
 	bool bPaused = false;
@@ -322,15 +374,16 @@ void FCommandFrameInputNetPacket::ReadRedundantData(TFunction<FCommandFrameInput
 
 		FBitArchiveSizeScope Scope(Ar, DataSize);
 
-		UE_LOG(LogCommandFrameNetPacket, Verbose, TEXT("ReadRedundantData CF[%d] DataCount[%d] DataSize[%d]"), CommandFrame, DataCount, DataSize);
+		UE_LOG(LogCommandFrameNetPacket, Log, TEXT("ReadRedundantData CF[%d] DataCount[%d] DataSize[%d]"), CommandFrame, DataCount, DataSize);
 
-		FCommandFrameInputAtom* InputAtomData = AllocateData(CommandFrame, DataCount);
+		FCommandFrameInputAtom* InputAtomData = (FCommandFrameInputAtom*)AllocateData(CommandFrame, DataCount);
 		if (InputAtomData)
 		{
+			bool bOutSuccess = false;
 			UScriptStruct* InputAtomStruct = FCommandFrameInputAtom::StaticStruct();
 			for (int32 index = 0; index < DataCount; ++index)
 			{
-				InputAtomStruct->GetCppStructOps()->Serialize(Ar, InputAtomData + index);
+				InputAtomStruct->GetCppStructOps()->NetSerialize(Ar, Ar.PackageMap, bOutSuccess, InputAtomData + index);
 			}
 		}
 		else

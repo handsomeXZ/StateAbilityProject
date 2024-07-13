@@ -16,7 +16,7 @@ enum EDeltaNetPacketType : uint32;
 
 struct FNetProcedureSyncParam
 {
-	FNetProcedureSyncParam(FCommandFrameDeltaNetPacket& InNetPacket, FArchive& InAr, UPackageMap* InMap, bool& InOutSuccess)
+	FNetProcedureSyncParam(const FCommandFrameDeltaNetPacket& InNetPacket, FArchive& InAr, UPackageMap* InMap, bool& InOutSuccess)
 		: NetPacket(InNetPacket)
 		, Ar(InAr)
 		, Map(InMap)
@@ -27,7 +27,7 @@ struct FNetProcedureSyncParam
 	FNetProcedureSyncParam(const FNetProcedureSyncParam& Param) = delete;
 	FNetProcedureSyncParam& operator=(const FNetProcedureSyncParam& Param) = delete;
 
-	FCommandFrameDeltaNetPacket& NetPacket;
+	const FCommandFrameDeltaNetPacket& NetPacket;
 	FArchive& Ar;
 	UPackageMap* Map;
 	bool& bOutSuccess;
@@ -45,7 +45,9 @@ class STATEABILITYSCRIPTRUNTIME_API ICommandFrameNetProcedure
 {
 	GENERATED_BODY()
 public:
-	virtual void OnNetSync(FNetProcedureSyncParam& SyncParam) {}
+	virtual void OnServerNetSync(FNetProcedureSyncParam& SyncParam) {}
+	virtual void OnClientNetSync(FNetProcedureSyncParam& SyncParam, bool& bNeedRewind) {}
+	virtual void OnClientRewind() {}
 };
 
 /**
@@ -59,6 +61,7 @@ class STATEABILITYSCRIPTRUNTIME_API ACommandFrameNetChannelBase : public AInfo
 public:
 	virtual void FixedTick(float DeltaTime, uint32 RCF, uint32 ICF) {}
 	virtual void RegisterCFrameManager(UCommandFrameManager* CommandFrameManager) {}
+	virtual void RewindFrame() {}
 
 	virtual void ClientSend_CommandFrameInputNetPacket(FCommandFrameInputNetPacket& InputNetPacket) {}
 	virtual void ServerSend_CommandFrameDeltaNetPacket(FCommandFrameDeltaNetPacket& DeltaNetPacket) {}

@@ -11,6 +11,12 @@
 // @TODO: Manager本身不应该直接使用这个
 #include "Net/CommandFrameNetChannel.h"
 
+#if WITH_EDITOR
+#include "Debug/DebugUtils.h"
+#endif
+
+#define LOCTEXT_NAMESPACE "CommandFrameManager"
+
 PRIVATE_DEFINE(APlayerController, TArray<TWeakObjectPtr<UInputComponent>>, CurrentInputStack)
 
 DEFINE_LOG_CATEGORY_STATIC(LogCommandFrameManager, Log, Verbose)
@@ -98,6 +104,8 @@ void UCommandFrameManager::Initialize(FSubsystemCollectionBase& Collection)
 		FTimerManager& TimerManager = GetWorld()->GetTimerManager();
 		LoadedWorldHandle = TimerManager.SetTimerForNextTick(FTimerDelegate::CreateUObject(this, &UCommandFrameManager::SetupCommandFrameTickFunction));
 	}
+
+	FCFDebugHelper::Get().SetWorld(GetWorld());
 }
 
 void UCommandFrameManager::Deinitialize()
@@ -235,7 +243,10 @@ void UCommandFrameManager::FlushCommandFrame_Fixed(float DeltaTime)
 	// 预处理
 
 	// 命令帧进入新的一帧
-	++RealCommandFrame;
+	if (!IsInRewinding())
+	{
+		++RealCommandFrame;
+	}
 	++InternalCommandFrame;
 
 	OnBeginFrame.Broadcast(DeltaTime, RealCommandFrame, InternalCommandFrame);
@@ -250,12 +261,27 @@ void UCommandFrameManager::FlushCommandFrame_Fixed(float DeltaTime)
 		// 服务端在完成Tick后，需要消耗记录的Input来执行
 		ConsumeInput();
 	}
-	else if (GetWorld()->GetNetMode() == ENetMode::NM_Client)
+	else if (GetWorld()->GetNetMode() == ENetMode::NM_Client && !IsInRewinding())
 	{
 		// 仅客户端需要更新时间膨胀
 		TimeDilationHelper.FixedTick(GetWorld(), DeltaTime);
 	}
+}
 
+void UCommandFrameManager::ReplayFrames(uint32 RewindedFrame)
+{
+	// 已将状态重置到RewindedFrame了，需要从ICF开始重新模拟到RCF。
+	InternalCommandFrame = RewindedFrame + 1;
+	++RealCommandFrame;
+
+	for (; InternalCommandFrame <= RealCommandFrame;)
+	{
+		SimulateInput(InternalCommandFrame);
+
+		FlushCommandFrame_Fixed(FixedDeltaTime);
+	}
+
+	InternalCommandFrame = RealCommandFrame;
 }
 
 void UCommandFrameManager::UpdateTimeDilationHelper(uint32 ServerCommandBufferNum, bool bFault)
@@ -280,6 +306,12 @@ bool UCommandFrameManager::HasManagerPrepared()
 	}
 
 	return true;
+}
+
+bool UCommandFrameManager::IsInRewinding()
+{
+	// 这里由ReplayFrames保证RCF处于最新未处理的帧上。
+	return InternalCommandFrame < RealCommandFrame;
 }
 
 APlayerController* UCommandFrameManager::GetLocalPlayerController()
@@ -309,6 +341,11 @@ APlayerController* UCommandFrameManager::GetLocalPlayerController()
 
 void UCommandFrameManager::UpdateLocalHistoricalData()
 {
+	if (IsInRewinding())
+	{
+		return;
+	}
+
 	// 处理前一帧
 
 	APlayerController* PC = GetLocalPlayerController();
@@ -330,11 +367,39 @@ void UCommandFrameManager::UpdateLocalHistoricalData()
 
 
 	// 发送InputPacket
-	ClientSendInputNetPacket();
+	ClientSendInputNetPacket(PC);
 
+
+#if WITH_EDITOR
+	FCommandFrameInputFrame* InputFrame = CommandBuffer.ReadData(RealCommandFrame);
+	if (!InputFrame)
+	{
+		return;
+	}
+
+	if (PC->GetPawn())
+	{
+		APawn* Pawn = PC->GetPawn();
+
+		uint8 InputCount = 0;
+		if (uint8* Counter = InputFrame->OrderCounter.Find(PS->GetUniqueId()))
+		{
+			InputCount = *Counter;
+		}
+
+		FCFDebugHelper::Get().DrawDebugString_3D(Pawn->GetActorLocation() + FVector(0.0f, 0.0f, 100.0f), FString::Printf(TEXT("[Client] CmdCount: %d"), InputCount), nullptr, FColor::Green, -1, false, 1.0f);
+	}
+
+	if (!DebugProxy_ClientCmdBufferChart.IsValid())
+	{
+		DebugProxy_ClientCmdBufferChart = FCFrameSimpleDebugChart::CreateDebugProxy(FName(TEXT("ClientCommandBuffer")), LOCTEXT("ClientCommandBuffer", "[Client] CommandBuffer"), 16, FVector2D(-1, MAX_COMMANDFRAME_NUM), 20.0f, FVector2f(200.0f, 150.0f), FColor::Green, true);
+	}
+
+	DebugProxy_ClientCmdBufferChart->Push(FVector2D(RealCommandFrame, CommandBuffer.Count()));
+#endif
 }
 
-void UCommandFrameManager::ClientSendInputNetPacket()
+void UCommandFrameManager::ClientSendInputNetPacket(APlayerController* PC)
 {
 	if (!IsValid(LocalNetChannel))
 	{
@@ -343,8 +408,10 @@ void UCommandFrameManager::ClientSendInputNetPacket()
 
 	UE_LOG(LogCommandFrameManager, Verbose, TEXT("Waiting to send InputNetPacket Frame[%d]"), RealCommandFrame);
 
+	
+
 	TCircularQueueView<FCommandFrameInputFrame> RangeView = CommandBuffer.ReadRangeData_Shrink(RealCommandFrame, CommandBuffer.Count());
-	FCommandFrameInputNetPacket InputNetPacket(RangeView);
+	FCommandFrameInputNetPacket InputNetPacket(PC->GetNetConnection(), RangeView);
 	LocalNetChannel->ClientSend_CommandFrameInputNetPacket(InputNetPacket);
 }
 
@@ -363,19 +430,26 @@ void UCommandFrameManager::ResetCommandFrame(uint32 CommandFrame)
 	AttributeSnapshotBuffer.Empty();
 }
 
-void UCommandFrameManager::ReceiveInput(const FUniqueNetIdRepl& NetId, const FCommandFrameInputNetPacket& InputNetPacket)
+void UCommandFrameManager::ReceiveInput(ACommandFrameNetChannelBase* Channel, const FUniqueNetIdRepl& NetId, const FCommandFrameInputNetPacket& InputNetPacket)
 {
-	auto AllocateData = [this, NetId](uint32 CommandFrame, int32 DataCount) -> FCommandFrameInputAtom* {
-		return (FCommandFrameInputAtom*)(CommandBuffer.AllocateItemData(NetId, DataCount, CommandFrame));
+	auto AllocateData = [this, NetId](uint32 CommandFrame, int32 DataCount) -> uint8* {
+		return CommandBuffer.AllocateItemData(NetId, DataCount, CommandFrame);
 	};
 
 	UE_LOG(LogCommandFrameManager, Log, TEXT("ReadRedundantData [%s] RCF[%u] ICF[%u] BufferNum[%u]"), *(NetId.ToString()), RealCommandFrame, InternalCommandFrame, CommandBuffer.Count(NetId));
 
-	InputNetPacket.ReadRedundantData(AllocateData);
+	APlayerController* PC = Cast<APlayerController>(Channel->GetOwner());
+
+	InputNetPacket.ReadRedundantData(PC->GetNetConnection(), AllocateData);
 }
 
 void UCommandFrameManager::ConsumeInput()
 {
+	if (IsInRewinding())
+	{
+		return;
+	}
+
 	// 处理当前帧
 	SimulateInput(RealCommandFrame);
 
@@ -387,9 +461,7 @@ void UCommandFrameManager::ConsumeInput()
 
 void UCommandFrameManager::SimulateInput(uint32 CommandFrame)
 {
-	// 唯一服务器，用Static好像也没什么不可以的
-	static TMap<const FUniqueNetIdRepl, TMap<const UInputAction*, TArray<TUniquePtr<FEnhancedInputActionEventBinding>>>> InputProcedureMap;
-	InputProcedureMap.Reset();
+	InputProcedureCache.Reset();
 
 	for (FConstPlayerControllerIterator Iterator = GetWorld()->GetPlayerControllerIterator(); Iterator; ++Iterator)
 	{
@@ -397,7 +469,7 @@ void UCommandFrameManager::SimulateInput(uint32 CommandFrame)
 		if (PC)
 		{
 			APlayerState* PS = PC->GetPlayerState<APlayerState>();
-			TMap<const UInputAction*, TArray<TUniquePtr<FEnhancedInputActionEventBinding>>>& InputEventMapRef = InputProcedureMap.FindOrAdd(PS->GetUniqueId());
+			TMap<const UInputAction*, TArray<TUniquePtr<FEnhancedInputActionEventBinding>>>& InputEventMapRef = InputProcedureCache.FindOrAdd(PS->GetUniqueId());
 			BuildInputEventMap(PC, InputEventMapRef);
 		}
 	}
@@ -408,12 +480,39 @@ void UCommandFrameManager::SimulateInput(uint32 CommandFrame)
 		return;
 	}
 
+#if WITH_EDITOR
+	for (FConstPlayerControllerIterator Iterator = GetWorld()->GetPlayerControllerIterator(); Iterator; ++Iterator)
+	{
+		APlayerController* PC = Iterator->Get();
+		if (PC && PC->GetPawn() && PC->GetPlayerState<APlayerState>())
+		{
+			APawn* Pawn = PC->GetPawn();
+			APlayerState* PS = PC->GetPlayerState<APlayerState>();
+
+			uint8 InputCount = 0;
+			if (uint8* Counter = InputFrame->OrderCounter.Find(PS->GetUniqueId()))
+			{
+				InputCount = *Counter;
+			}
+
+			if (GetWorld()->GetNetMode() == NM_DedicatedServer)
+			{
+				FCFDebugHelper::Get().DrawDebugString_3D(Pawn->GetActorLocation() + FVector(0.0f, 0.0f, 100.0f), FString::Printf(TEXT("[Server]CmdCount: %d"), InputCount), nullptr, FColor::White, -1, false, 1.0f);
+			}
+			else
+			{
+				FCFDebugHelper::Get().DrawDebugString_3D(Pawn->GetActorLocation() + FVector(0.0f, 0.0f, 100.0f), FString::Printf(TEXT("[Client Rewind]CmdCount: %d"), InputCount), nullptr, FColor::Green, -1, false, 1.0f);
+			}
+		}
+	}
+#endif
+
 	uint32 InputIndex = 0;
 
 	for (auto& Counter : InputFrame->OrderCounter)
 	{
 		const FUniqueNetIdRepl& NetId = Counter.Key;
-		TMap<const UInputAction*, TArray<TUniquePtr<FEnhancedInputActionEventBinding>>>& InputEventMap = InputProcedureMap.FindOrAdd(NetId);
+		TMap<const UInputAction*, TArray<TUniquePtr<FEnhancedInputActionEventBinding>>>& InputEventMap = InputProcedureCache.FindOrAdd(NetId);
 		uint8 Count = Counter.Value;
 
 		if (!Count || InputEventMap.IsEmpty())
@@ -545,6 +644,11 @@ void UCommandFrameManager::BuildInputEventMap(APlayerController* PC, TMap<const 
 
 void UCommandFrameManager::ServerSendDeltaNetPacket()
 {
+	if (IsInRewinding())
+	{
+		return;
+	}
+
 	for (auto& ChannelPair : NetChannels)
 	{
 		FCommandFrameDeltaNetPacket Packet;
@@ -604,3 +708,5 @@ void UCommandFrameManager::RegisterClientChannel(ACommandFrameNetChannelBase* Ch
 		LocalNetChannel = Channel;
 	}
 }
+
+#undef LOCTEXT_NAMESPACE

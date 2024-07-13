@@ -1,6 +1,8 @@
 #include "Component/Mover/CFrameMovementContext.h"
 
+#include "CommandFrameManager.h"
 #include "Component/CFrameMoverComponent.h"
+#include "Component/Mover/CFrameMoveStateAdapter.h"
 
 void FCFrameMovementContext::Init(UCFrameMoverComponent* InMoverComp, float InDeltaTime, uint32 InRCF, uint32 InICF)
 {
@@ -37,7 +39,7 @@ void FCFrameMovementContext::ResetAllData()
 	PersistentDataBuffer.Empty();
 }
 
-bool FCFrameMovementContext::IsValid()
+bool FCFrameMovementContext::IsDataValid()
 {
 	return IsValid(MoverComp) && 
 		IsValid(MoveStateAdapter) &&

@@ -16,6 +16,7 @@
 #endif
 
 class ACommandFrameNetChannelBase;
+class UNetConnection;
 struct FCommandFrameInputFrame;
 struct FCommandFrameInputAtom;
 
@@ -61,10 +62,18 @@ namespace DeltaNetPacketUtils
 {
 	// 必须严格按照PacketType顺序执行
 
+	using FPrefixCallBackFunc = TFunction<void(int32 PrefixDataSize, uint32 ServerCommandBufferNum, bool bFault)>;
+
 	void BuildPacket_Fault_FrameExpiry(FCommandFrameDeltaNetPacket& Packet);
 
+	void SerializeDeltaPrefix(const FCommandFrameDeltaNetPacket& NetPacket, FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess, FPrefixCallBackFunc CallBack = FPrefixCallBackFunc());
+	void SerializeDeltaPackaged(const FCommandFrameDeltaNetPacket& NetPacket, FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess);
+
 	template<EDeltaNetPacketType Type>
-	void NetSerialize(FCommandFrameDeltaNetPacket& NetPacket, FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess);
+	void NetSync(const FCommandFrameDeltaNetPacket& NetPacket, FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess);
+
+	template<>
+	void NetSync<EDeltaNetPacketType::Fault_FrameExpiry>(const FCommandFrameDeltaNetPacket& NetPacket, FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess);
 }
 
 USTRUCT()
@@ -112,13 +121,13 @@ struct FCommandFrameInputNetPacket
 
 public:
 	FCommandFrameInputNetPacket() {}
-	FCommandFrameInputNetPacket(TCircularQueueView<FCommandFrameInputFrame>& InputFrames);
+	FCommandFrameInputNetPacket(UNetConnection* Connection, TCircularQueueView<FCommandFrameInputFrame>& InputFrames);
 
 	bool NetSerialize(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess);
 	
 	// 冗余读写
-	void WriteRedundantData(TCircularQueueView<FCommandFrameInputFrame>& InputFrames);
-	void ReadRedundantData(TFunction<FCommandFrameInputAtom*(uint32 CommandFrame, int32 DataCount)> AllocateData) const;
+	void WriteRedundantData(UNetConnection* Connection, TCircularQueueView<FCommandFrameInputFrame>& InputFrames);
+	void ReadRedundantData(UNetConnection* Connection, TFunction<uint8*(uint32 CommandFrame, int32 DataCount)> AllocateData) const;
 
 	// 客户端的最新帧号
 	uint32 ClientCommandFrame;

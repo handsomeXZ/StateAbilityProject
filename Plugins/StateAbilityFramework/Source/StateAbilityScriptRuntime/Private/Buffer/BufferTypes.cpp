@@ -109,7 +109,7 @@ uint8* FCommandFrameAttributeSnapshot::AllocateItem(const UScriptStruct* Key, ui
 		{
 			const int32 MinAlignment = Key->GetMinAlignment();
 			const int32 RequiredSize = Key->GetStructureSize();
-			((uint8*)FMemory::Malloc(FMath::Max(1, RequiredSize), MinAlignment));
+			Memory = ((uint8*)FMemory::Malloc(FMath::Max(1, RequiredSize), MinAlignment));
 		}
 
 		Key->InitializeStruct(Memory);

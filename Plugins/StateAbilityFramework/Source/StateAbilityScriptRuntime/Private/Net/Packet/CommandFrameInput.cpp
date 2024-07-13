@@ -31,6 +31,13 @@ FCommandFrameInputAtom::FCommandFrameInputAtom(const FInputActionInstance& Actio
 	ElapsedTriggeredTime = ActionData.GetTriggeredTime();
 }
 
+void FCommandFrameInputAtom::BulkMemoryBlob(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess)
+{
+	// 借助Connection来处理UObject
+
+
+}
+
 bool FCommandFrameInputAtom::Serialize(FArchive& Ar)
 {
 	if (Ar.IsSaving())
@@ -59,7 +66,7 @@ bool FCommandFrameInputAtom::NetSerialize(FArchive& Ar, class UPackageMap* Map, 
 	if (Ar.IsSaving())
 	{
 		UInputAction* IA = const_cast<UInputAction*>(InputAction);
-			Ar << IA;
+		Ar << IA;
 	}
 	else if (Ar.IsLoading())
 	{

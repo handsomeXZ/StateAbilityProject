@@ -43,34 +43,10 @@ public:
 
 	void Update(UWorld* WorldContext, uint32 ServerCommandBufferNum, bool bFault);
 	void FixedTick(UWorld* WorldContext, float DeltaTime);
+	ETimeDilationAdaptStage GetState() { return TimeDilationAdaptStage; }
 
-	FTimeDilationHelper(int32 DataNum, uint32 InMinCommandBufferNum, uint32 InMaxCommandBufferNum, float InFixedFrameRate)
-		: MinCommandBufferNum(InMinCommandBufferNum)
-		, MaxCommandBufferNum(InMaxCommandBufferNum)
-		, FixedFrameRate(InFixedFrameRate)
-		, TimeMagAverager(DataNum)
-		, TimeDilationAdaptStage(ETimeDilationAdaptStage::Default)
-		, CurTimeDilation(1.0f)
-		, AccumulatedStableSeconds(0.0f)
-		, LastServerCommandBufferNum(0.0f)
-	{
-		TimeDilationAdaptStage = ETimeDilationAdaptStage::Default;
-		CurTimeDilation = 1.0f;
-		AccumulatedStableSeconds = 0.0f;
-		LastServerCommandBufferNum = 0;
-	}
-	FTimeDilationHelper()
-		: MinCommandBufferNum(4)
-		, MaxCommandBufferNum(16)
-		, FixedFrameRate(30.0f)
-		, TimeMagAverager(0)
-		, TimeDilationAdaptStage(ETimeDilationAdaptStage::Default)
-		, CurTimeDilation(1.0f)
-		, AccumulatedStableSeconds(0.0f)
-		, LastServerCommandBufferNum(0.0f)
-	{
-
-	}
+	FTimeDilationHelper(int32 DataNum, uint32 InMinCommandBufferNum, uint32 InMaxCommandBufferNum, float InFixedFrameRate);
+	FTimeDilationHelper();
 
 	float GetCurTimeDilation() { return CurTimeDilation; }
 
@@ -87,4 +63,8 @@ private:
 	float CurTimeDilation;
 	float AccumulatedStableSeconds;
 	float LastServerCommandBufferNum;
+
+#if WITH_EDITOR
+	TSharedPtr<struct FCFrameSimpleDebugText> DebugProxy_StateText;
+#endif
 };

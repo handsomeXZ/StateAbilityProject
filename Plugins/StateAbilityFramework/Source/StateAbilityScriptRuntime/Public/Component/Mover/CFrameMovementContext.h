@@ -39,7 +39,7 @@ struct FCFrameMovementContext
 	void Init(UCFrameMoverComponent* InMoverComp, float InDeltaTime, uint32 InRCF, uint32 InICF);
 	void ResetFrameData();	// 仅清除每帧的临时数据
 	void ResetAllData();	// 清除所有数据（包含跨帧数据）
-	bool IsValid();
+	bool IsDataValid();
 
 	//////////////////////////////////////////////////////////////////////////
 	// 临时数据

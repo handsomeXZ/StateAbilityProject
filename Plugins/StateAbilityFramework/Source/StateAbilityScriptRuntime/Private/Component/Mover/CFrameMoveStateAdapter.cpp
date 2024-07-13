@@ -3,6 +3,10 @@
 #include "Component/CFrameMoverComponent.h"
 #include "Component/Mover/MoveLibrary/CFrameBasedMoveUtils.h"
 
+#if WITH_EDITOR
+#include "Debug/DebugUtils.h"
+#endif
+
 UCFrameMoveStateAdapter::UCFrameMoveStateAdapter()
 	: MoverComponent(nullptr)
 	, MovementBase(nullptr)
@@ -58,6 +62,23 @@ void UCFrameMoveStateAdapter::UpdateMoveFrame()
 void UCFrameMoveStateAdapter::EndMoveFrame(float DeltaTime, uint32 RCF, uint32 ICF)
 {
 	
+
+#if WITH_EDITOR
+	FColor NetColor;
+	if (GetWorld()->GetNetMode() == NM_Client)
+	{
+		NetColor = FColor::Green;
+	}
+	else if (GetWorld()->GetNetMode() == NM_DedicatedServer)
+	{
+		NetColor = FColor::White;
+	}
+	else
+	{
+		NetColor = FColor::Blue;
+	}
+	FCFDebugHelper::Get().DrawDebugCircle_3D(GetLocation_WorldSpace(), 50.0f, 32, NetColor, true, 3.0f, 1, 1.0f, GetRight(), GetForward(), true);
+#endif
 }
 
 FVector UCFrameMoveStateAdapter::GetLocation_WorldSpace() const
@@ -117,4 +138,19 @@ FVector UCFrameMoveStateAdapter_Pawn::GetLocation_BaseSpace() const
 FRotator UCFrameMoveStateAdapter_Pawn::GetOrientation_BaseSpace() const
 {
 	return StateOwner->GetActorRotation();
+}
+
+FVector UCFrameMoveStateAdapter_Pawn::GetUp() const
+{
+	return StateOwner->GetActorUpVector();
+}
+
+FVector UCFrameMoveStateAdapter_Pawn::GetRight() const
+{
+	return StateOwner->GetActorRightVector();
+}
+
+FVector UCFrameMoveStateAdapter_Pawn::GetForward() const
+{
+	return StateOwner->GetActorForwardVector();
 }
