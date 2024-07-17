@@ -115,6 +115,7 @@ uint8* FCommandFrameAttributeSnapshot::AllocateItem(const UScriptStruct* Key, ui
 		Key->InitializeStruct(Memory);
 
 		MemoryBuffer.Add(Key, Memory);
+		UsedKey.Add(Key);
 
 		return Memory;
 	}
@@ -157,4 +158,17 @@ bool FCommandFrameAttributeSnapshot::Verify(uint32 InCommandFrame)
 bool FCommandFrameAttributeSnapshot::HasOwnerShip(const UScriptStruct* Key)
 {
 	return UsedKey.Contains(Key);
+}
+
+uint8* FCommandFrameAttributeSnapshot::ReadItemData(const UScriptStruct* Key)
+{
+	if (UsedKey.Contains(Key))
+	{
+		if (uint8** MemoryPtr = MemoryBuffer.Find(Key))
+		{
+			return *MemoryPtr;
+		}
+	}
+
+	return nullptr;
 }

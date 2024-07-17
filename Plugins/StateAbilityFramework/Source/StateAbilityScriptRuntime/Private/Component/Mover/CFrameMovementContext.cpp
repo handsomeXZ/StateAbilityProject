@@ -29,6 +29,8 @@ void FCFrameMovementContext::ResetFrameData()
 	UpdatedPrimitive = nullptr;
 	MoveStateAdapter = nullptr;
 	CFrameManager = nullptr;
+	CurrentMode = nullptr;
+
 	CombinedMove.Clear();
 }
 

@@ -8,17 +8,17 @@
 #include "Component/Mover/MoveLibrary/CFrameMovementUtils.h"
 #include "Component/Mover/MoveLibrary/CFrameBasedMoveUtils.h"
 
-#include "CFrameWalkingMode.generated.h"
+#include "CFrameFallingMode.generated.h"
 
 struct FInputActionValue;
 class UInputAction;
 
 UCLASS(Abstract, Blueprintable, BlueprintType)
-class UCFrameWalkingMode : public UCFrameMovementMode
+class UCFrameFallingMode : public UCFrameMovementMode
 {
 	GENERATED_UCLASS_BODY()
 public:
-	bool bIsOnWalkableFloor = true;
+	mutable bool bIsOnWalkableFloor = false;
 
 	virtual void OnActivated() override;
 	virtual void OnDeactivated() override;
@@ -30,14 +30,12 @@ protected:
 	void OnMoveTriggered(const FInputActionValue& Value);
 	void OnMoveCompleted(const FInputActionValue& Value);
 
-	void CaptureFinalState(FCFrameMovementContext& Context, bool bDidAttemptMovement, const FFloorCheckResult& FloorResult) const;
+	void CaptureFinalState(FCFrameMovementContext& Context, const FFloorCheckResult& FloorResult) const;
 
 	FVector ConsumeControlInputVector();
-	FCFrameRelativeBaseInfo UpdateFloorAndBaseInfo(FCFrameMovementContext& Context, const FFloorCheckResult& FloorResult) const;
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
 	TObjectPtr<UInputAction> IA_Move;
-
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
 	ECFrameMoveInputType MoveInputType = ECFrameMoveInputType::Velocity;
 	/**
@@ -62,6 +60,46 @@ protected:
 
 
 
+	/**
+	 * When falling, amount of movement control available to the actor.
+	 * 0 = no control, 1 = full control
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FallingMode", meta = (ClampMin = "0", ClampMax = "1.0"))
+	float AirControlPercentage = 0.4f;
+	/**
+	 * Deceleration to apply to air movement when falling slower than terminal velocity.
+	 * Note: This is NOT applied to vertical velocity, only movement plane velocity
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FallingMode", meta = (ClampMin = "0", ForceUnits = "cm/s^2"))
+	float FallingDeceleration = 200.0f;
+	/**
+	 * Deceleration to apply to air movement when falling faster than terminal velocity
+	 * Note: This is NOT applied to vertical velocity, only movement plane velocity
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FallingMode", meta = (ClampMin = "0", ForceUnits = "cm/s^2"))
+	float OverTerminalSpeedFallingDeceleration = 800.0f;
+	/**
+	 * If the actor's movement plane velocity is greater than this speed falling will start applying OverTerminalSpeedFallingDeceleration instead of FallingDeceleration
+	 * The expected behavior is to set OverTerminalSpeedFallingDeceleration higher than FallingDeceleration so the actor will slow down faster
+	 * when going over TerminalMovementPlaneSpeed.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FallingMode", meta = (ClampMin = "0", ForceUnits = "cm/s"))
+	float TerminalMovementPlaneSpeed = 1500.0f;
+	/** When exceeding maximum vertical speed, should it be enforced via a hard clamp? If false, VerticalFallingDeceleration will be used for a smoother transition to the terminal speed limit. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FallingMode")
+	bool bShouldClampTerminalVerticalSpeed = true;
+	/** Deceleration to apply to vertical velocity when it's greater than TerminalVerticalSpeed. Only used if bShouldClampTerminalVerticalSpeed is false. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FallingMode", meta = (EditCondition = "!bShouldClampTerminalVerticalSpeed", ClampMin = "0", ForceUnits = "cm/s^2"))
+	float VerticalFallingDeceleration = 2000.0f;
+	/**
+	 * If the actors vertical velocity is greater than this speed VerticalFallingDeceleration will be applied to vertical velocity
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FallingMode", meta = (ClampMin = "0", ForceUnits = "cm/s"))
+	float TerminalVerticalSpeed = 2000.0f;
+
+
+
+
 	/** Default max linear rate of deceleration when there is no controlled input */
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "General", meta = (ClampMin = "0", UIMin = "0", ForceUnits = "cm/s^2"))
 	float Deceleration = 4000.f;
@@ -81,52 +119,12 @@ protected:
 
 
 
-
-	/**
-	 * Setting that affects movement control. Higher values allow faster changes in direction. This can be used to simulate slippery
-	 * surfaces such as ice or oil by lowering the value (possibly based on the material the actor is standing on).
-	 */
-	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "General|Friction", meta = (ClampMin = "0", UIMin = "0"))
-	float GroundFriction = 8.0f;
-	/**
-	  * If true, BrakingFriction will be used to slow the character to a stop (when there is no Acceleration).
-	  * If false, braking uses the same friction passed to CalcVelocity() (ie GroundFriction when walking), multiplied by BrakingFrictionFactor.
-	  * This setting applies to all movement modes; if only desired in certain modes, consider toggling it when movement modes change.
-	  * @see BrakingFriction
-	  */
-	UPROPERTY(Category = "General|Friction", EditDefaultsOnly, BlueprintReadWrite)
-	uint8 bUseSeparateBrakingFriction : 1;
-	/**
-	 * Friction (drag) coefficient applied when braking (whenever Acceleration = 0, or if character is exceeding max speed); actual value used is this multiplied by BrakingFrictionFactor.
-	 * When braking, this property allows you to control how much friction is applied when moving across the ground, applying an opposing force that scales with current velocity.
-	 * Braking is composed of friction (velocity-dependent drag) and constant deceleration.
-	 * This is the current value, used in all movement modes; if this is not desired, override it or bUseSeparateBrakingFriction when movement mode changes.
-	 * @note Only used if bUseSeparateBrakingFriction setting is true, otherwise current friction such as GroundFriction is used.
-	 * @see bUseSeparateBrakingFriction, BrakingFrictionFactor, GroundFriction, BrakingDecelerationWalking
-	 */
-	UPROPERTY(Category = "General|Friction", EditAnywhere, BlueprintReadWrite, meta = (ClampMin = "0", UIMin = "0", EditCondition = "bUseSeparateBrakingFriction"))
-	float BrakingFriction = 8.0f;
-	/**
-	 * Factor used to multiply actual value of friction used when braking.
-	 * This applies to any friction value that is currently used, which may depend on bUseSeparateBrakingFriction.
-	 * @note This is 2 by default for historical reasons, a value of 1 gives the true drag equation.
-	 */
-	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "General|Friction", meta = (ClampMin = "0", UIMin = "0"))
-	float BrakingFrictionFactor = 2.0f;
-
-
-
-
-
 	/** Walkable slope angle, represented as cosine(max slope angle) for performance reasons. Ex: for max slope angle of 30 degrees, value is cosine(30 deg) = 0.866 */
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Ground Movement")
 	float MaxWalkSlopeCosine = 0.71f;
 	/** Max distance to scan for floor surfaces under a Mover actor */
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Ground Movement", meta = (ClampMin = "0", UIMin = "0", ForceUnits = "cm"))
 	float FloorSweepDistance = 40.0f;
-	/** Mover actors will be able to step up onto or over obstacles shorter than this */
-	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Ground Movement", meta = (ClampMin = "0", UIMin = "0", ForceUnits = "cm"))
-	float MaxStepHeight = 40.0f;
 
 private:
 	FVector ControlInputVector = FVector::ZeroVector;

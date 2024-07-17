@@ -3,7 +3,9 @@
 #pragma once
 
 #include "CoreMinimal.h"
+
 #include "Subsystems/WorldSubsystem.h"
+#include "StructView.h"
 #include "InputActionValue.h"
 #include "EnhancedInputComponent.h"
 #include "GameFramework/OnlineReplStructs.h"
@@ -11,6 +13,7 @@
 #include "Buffer/BufferTypes.h"
 #include "Buffer/CircularQueueCore.h"
 #include "Net/Packet/CommandFrameInput.h"
+#include "Net/CommandFrameNetTypes.h"
 #include "TimeDilationHelper.h"
 
 #include "CommandFrameManager.generated.h"
@@ -53,6 +56,7 @@ struct TStructOpsTypeTraits<FCommandFrameTickFunction> : public TStructOpsTypeTr
 };
 
 DECLARE_MULTICAST_DELEGATE_ThreeParams(FOnFixedUpdate, float /* DeltaTime */, uint32 /* RCF */, uint32 /* ICF */);
+DECLARE_DELEGATE_OneParam(FOnFrameNetChannelRegistered, ACommandFrameNetChannelBase* Channel);
 
 UCLASS()
 class STATEABILITYSCRIPTRUNTIME_API UCommandFrameManager : public UWorldSubsystem
@@ -61,9 +65,10 @@ class STATEABILITYSCRIPTRUNTIME_API UCommandFrameManager : public UWorldSubsyste
 public:
 	static UCommandFrameManager* Get(UObject* WoldContet);
 
-	static const uint32 MIN_COMMANDFRAME_NUM;
-	static const uint32 MAX_COMMANDFRAME_NUM;
-	static const uint32 MAX_SNAPSHOTBUFFER_NUM;
+	static const uint32 MIN_COMMANDFRAME_NUM;			// 命令缓冲区稳定时的期望数量
+	static const uint32 MAX_COMMANDFRAME_NUM;			// 命令缓冲区最大容量
+	static const uint32 MAX_COMMANDFRAME_REDUNDANT_NUM;	// 命令缓冲区最大冗余数量
+	static const uint32 MAX_SNAPSHOTBUFFER_NUM;			// 属性快照缓冲区的最大容量
 
 	static const float FixedFrameRate;
 
@@ -86,6 +91,11 @@ public:
 	void LoginOut(AGameModeBase* GameMode, AController* PC);
 	void RegisterClientChannel(ACommandFrameNetChannelBase* Channel);
 
+	// 注册时，如果存在就会立即调用
+	void BindOnFrameNetChannelRegistered(UActorComponent* Key, FOnFrameNetChannelRegistered OnFrameNetChannelRegistered);
+	void BindOnFrameNetChannelRegistered(AActor* Key, FOnFrameNetChannelRegistered OnFrameNetChannelRegistered);
+	void UnBindOnFrameNetChannelRegistered(UObject* Key);
+	void BroadcastOnFrameNetChannelRegistered(ACommandFrameNetChannelBase* Channel);
 
 	// Tick
 	uint32 MaxFixedFrameNum;
@@ -95,13 +105,19 @@ public:
 	FCommandFrameTickFunction CommandFrameTickFunction;
 	FTimerHandle LoadedWorldHandle;
 
+	FOnFixedUpdate OnPreBeginFrame;
 	FOnFixedUpdate OnBeginFrame;
+	FOnFixedUpdate OnPostBeginFrame;
+	FOnFixedUpdate OnPreEndFrame;
 	FOnFixedUpdate OnEndFrame;
+	FOnFixedUpdate OnPostEndFrame;
 
 	void SetupCommandFrameTickFunction();
 	void FlushCommandFrame(float DeltaTime);
 	void FlushCommandFrame_Fixed(float DeltaTime);
-
+	void EndPrevFlushCommandFrame(float DeltaTime);
+	void AdvancedCommandFrame();
+	void BeginNewFlushCommandFrame(float DeltaTime);
 	//////////////////////////////////////////////////////////////////////////
 	// Rewind
 	void ReplayFrames(uint32 RewindedFrame);
@@ -120,9 +136,10 @@ public:
 	// Client
 
 	APlayerController* GetLocalPlayerController();
-	void UpdateLocalHistoricalData();
-	void ClientSendInputNetPacket(APlayerController* PC);
+	void RecordCommandSnapshot();
+	void ClientSendInputNetPacket();
 	void ClientReceiveCommandAck(uint32 ServerCommandFrame);
+	FStructView ReadAttributeFromSnapshotBuffer(uint32 CommandFrame, const UScriptStruct* Key);
 
 	TJOwnerShipCircularQueue<FCommandFrameAttributeSnapshot, UScriptStruct*, uint8*> AttributeSnapshotBuffer;
 
@@ -147,7 +164,9 @@ private:
 	UPROPERTY()
 	TObjectPtr<ACommandFrameNetChannelBase> LocalNetChannel;
 	UPROPERTY()
-	TMap<AController*, ACommandFrameNetChannelBase*> NetChannels;
+	TMap<UNetConnection*, ACommandFrameNetChannelBase*> NetChannels;
+
+	TMap<UObject*, FOnFrameNetChannelRegistered> NetChannelDelegateMap;
 
 	TMap<const FUniqueNetIdRepl, TMap<const UInputAction*, TArray<TUniquePtr<FEnhancedInputActionEventBinding>>>> InputProcedureCache;
 
@@ -155,5 +174,6 @@ private:
 	// Debug
 #if WITH_EDITOR
 	TSharedPtr<struct FCFrameSimpleDebugChart> DebugProxy_ClientCmdBufferChart;
+	TSharedPtr<struct FCFrameSimpleDebugMultiTimeline> DebugProxy_ClientFrameTimeline;
 #endif
 };

@@ -1,5 +1,7 @@
 #include "Component/Mover/MoveLibrary/CFrameMovementUtils.h"
 
+#include "Component/CFrameMoverComponent.h"
+
 DEFINE_LOG_CATEGORY_STATIC(LogCFrameMovement, Log, All)
 
 const double FCFrameMovementUtils::SMALL_MOVE_DISTANCE = 1e-3;
@@ -54,6 +56,58 @@ FVector FCFrameMovementUtils::ComputeVelocity(const FCFrameComputeVelocityParams
 	const float NewMaxSpeed = (IsExceedingMaxSpeed(Velocity, MaxPawnSpeed)) ? Velocity.Size() : MaxPawnSpeed;
 	Velocity += ControlAcceleration * FMath::Abs(InParams.Acceleration) * InParams.DeltaSeconds;
 	Velocity = Velocity.GetClampedToMaxSize(NewMaxSpeed);
+
+	return Velocity;
+}
+
+FVector FCFrameMovementUtils::ComputeCombinedVelocity(const FCFrameComputeCombinedVelocityParams& InParams)
+{
+	const FVector ControlAcceleration = InParams.MoveDirectionIntent.GetClampedToMaxSize(1.f);
+	FVector Velocity = InParams.InitialVelocity;
+
+	const float AnalogInputModifier = (ControlAcceleration.SizeSquared() > 0.f ? ControlAcceleration.Size() : 0.f);
+
+	const float MaxInputSpeed = InParams.MaxSpeed * AnalogInputModifier;
+	const float MaxSpeed = FMath::Max(InParams.OverallMaxSpeed, MaxInputSpeed);
+
+	const bool bExceedingMaxSpeed = IsExceedingMaxSpeed(Velocity, MaxSpeed);
+
+	if ((AnalogInputModifier > KINDA_SMALL_NUMBER || InParams.ExternalAcceleration.Size() > KINDA_SMALL_NUMBER) && !bExceedingMaxSpeed)
+	{
+		// Apply change in velocity direction
+		if (Velocity.SizeSquared() > 0.f)
+		{
+			// Change direction faster than only using acceleration, but never increase velocity magnitude.
+			const float TimeScale = FMath::Clamp(InParams.DeltaSeconds * InParams.TurningBoost, 0.f, 1.f);
+			Velocity = Velocity + (ControlAcceleration * Velocity.Size() - Velocity) * FMath::Min(TimeScale * InParams.Friction, 1.f);
+		}
+	}
+	else
+	{
+		// Dampen velocity magnitude based on deceleration.
+		if (Velocity.SizeSquared() > 0.f)
+		{
+			const FVector OldVelocity = Velocity;
+			const float VelSize = FMath::Max(Velocity.Size() - FMath::Abs(InParams.Friction * Velocity.Size() + InParams.Deceleration) * InParams.DeltaSeconds, 0.f);
+			Velocity = Velocity.GetSafeNormal() * VelSize;
+
+			// Don't allow braking to lower us below max speed if we started above it.
+			if (bExceedingMaxSpeed && Velocity.SizeSquared() < FMath::Square(MaxSpeed))
+			{
+				Velocity = OldVelocity.GetSafeNormal() * MaxSpeed;
+			}
+		}
+	}
+
+	// Apply input acceleration and clamp velocity magnitude.
+	const float NewMaxInputSpeed = (IsExceedingMaxSpeed(Velocity, MaxInputSpeed)) ? Velocity.Size() : MaxInputSpeed;
+	Velocity += ControlAcceleration * FMath::Abs(InParams.Acceleration) * InParams.DeltaSeconds;
+	Velocity = Velocity.GetClampedToMaxSize(NewMaxInputSpeed);
+
+	// Apply move requested acceleration
+	const float NewMaxMoveSpeed = (IsExceedingMaxSpeed(Velocity, InParams.OverallMaxSpeed)) ? Velocity.Size() : InParams.OverallMaxSpeed;
+	Velocity += InParams.ExternalAcceleration * InParams.DeltaSeconds;
+	Velocity = Velocity.GetClampedToMaxSize(NewMaxMoveSpeed);
 
 	return Velocity;
 }

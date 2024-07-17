@@ -64,7 +64,7 @@ namespace DeltaNetPacketUtils
 {
 	void BuildPacket_Fault_FrameExpiry(FCommandFrameDeltaNetPacket& Packet)
 	{
-		Packet.PacketType = (EDeltaNetPacketType)(Packet.PacketType & EDeltaNetPacketType::Fault_FrameExpiry);
+		Packet.PacketType = (EDeltaNetPacketType)(Packet.PacketType | EDeltaNetPacketType::Fault_FrameExpiry);
 	}
 
 	void SerializeDeltaPrefix(const FCommandFrameDeltaNetPacket& NetPacket, FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess, FPrefixCallBackFunc CallBack)
@@ -83,7 +83,9 @@ namespace DeltaNetPacketUtils
 		{
 			bFault = NetPacket.PacketType & 0xF0000000;
 
+			// PrefixDataSize并不包含自身
 			FBitArchiveSizeScope Scope(Ar, PrefixDataSize);
+			
 			UCommandFrameManager* CFManager = NetPacket.NetChannel->GetWorld()->GetSubsystem<UCommandFrameManager>();
 			APlayerController* PC = Cast<APlayerController>(NetPacket.NetChannel->GetNetConnection()->OwningActor);
 			APlayerState* PS = PC->GetPlayerState<APlayerState>();
@@ -111,34 +113,64 @@ namespace DeltaNetPacketUtils
 		}
 	}
 
-	void SerializeDeltaPackaged(const FCommandFrameDeltaNetPacket& NetPacket, FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess)
+	void SerializeDeltaPackaged(FCommandFrameDeltaNetPacket& NetPacket, FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess)
 	{
-		if (NetPacket.PacketType & EDeltaNetPacketType::Movement)
+		bOutSuccess = true;
+
+		if (Ar.IsSaving())
 		{
-			DeltaNetPacketUtils::NetSync<EDeltaNetPacketType::Movement>(NetPacket, Ar, Map, bOutSuccess);
-			if (!bOutSuccess)
+			bool bNetSyncSuccess = false;
+			DeltaNetPacketUtils::NetSync<EDeltaNetPacketType::Movement>(NetPacket, Ar, Map, bNetSyncSuccess);
+			if (bNetSyncSuccess)
 			{
-				return;
+				NetPacket.PacketType = (EDeltaNetPacketType)(NetPacket.PacketType | EDeltaNetPacketType::Movement);
+			}
+
+			bNetSyncSuccess = false;
+			DeltaNetPacketUtils::NetSync<EDeltaNetPacketType::StateAbilityScript>(NetPacket, Ar, Map, bNetSyncSuccess);
+			if (bNetSyncSuccess)
+			{
+				NetPacket.PacketType = (EDeltaNetPacketType)(NetPacket.PacketType | EDeltaNetPacketType::StateAbilityScript);
+			}
+
+			bNetSyncSuccess = false;
+			DeltaNetPacketUtils::NetSync<EDeltaNetPacketType::Fault_FrameExpiry>(NetPacket, Ar, Map, bNetSyncSuccess);
+			if (bNetSyncSuccess)
+			{
+				NetPacket.PacketType = (EDeltaNetPacketType)(NetPacket.PacketType | EDeltaNetPacketType::Fault_FrameExpiry);
+			}
+		}
+		else if (Ar.IsLoading())
+		{
+			if (NetPacket.PacketType & EDeltaNetPacketType::Movement)
+			{
+				DeltaNetPacketUtils::NetSync<EDeltaNetPacketType::Movement>(NetPacket, Ar, Map, bOutSuccess);
+				if (!bOutSuccess)
+				{
+					return;
+				}
+			}
+
+			if (NetPacket.PacketType & EDeltaNetPacketType::StateAbilityScript)
+			{
+				DeltaNetPacketUtils::NetSync<EDeltaNetPacketType::StateAbilityScript>(NetPacket, Ar, Map, bOutSuccess);
+				if (!bOutSuccess)
+				{
+					return;
+				}
+			}
+
+			if (NetPacket.PacketType & EDeltaNetPacketType::Fault_FrameExpiry)
+			{
+				DeltaNetPacketUtils::NetSync<EDeltaNetPacketType::Fault_FrameExpiry>(NetPacket, Ar, Map, bOutSuccess);
+				if (!bOutSuccess)
+				{
+					return;
+				}
 			}
 		}
 
-		if (NetPacket.PacketType & EDeltaNetPacketType::StateAbilityScript)
-		{
-			DeltaNetPacketUtils::NetSync<EDeltaNetPacketType::StateAbilityScript>(NetPacket, Ar, Map, bOutSuccess);
-			if (!bOutSuccess)
-			{
-				return;
-			}
-		}
 
-		if (NetPacket.PacketType & EDeltaNetPacketType::Fault_FrameExpiry)
-		{
-			DeltaNetPacketUtils::NetSync<EDeltaNetPacketType::Fault_FrameExpiry>(NetPacket, Ar, Map, bOutSuccess);
-			if (!bOutSuccess)
-			{
-				return;
-			}
-		}
 	}
 
 	template<>
@@ -194,15 +226,7 @@ bool FCommandFrameDeltaNetPacket::NetSerialize(FArchive& Ar, class UPackageMap* 
 	Ar << PrevServerCommandFrame;
 	Ar << NetChannel;
 
-	uint32 IntPacketType = uint32(PacketType);
-	Ar << IntPacketType;
-
 	Ar << bLocal;
-
-	if (Ar.IsLoading())
-	{
-		PacketType = EDeltaNetPacketType(IntPacketType);
-	}
 
 	if (Ar.IsSaving())
 	{
@@ -230,6 +254,12 @@ bool FCommandFrameDeltaNetPacket::NetSerialize(FArchive& Ar, class UPackageMap* 
 		FMemory::Memcpy(RawData.GetData(), NetBitWriter.GetData(), NetBitWriter.GetNumBytes());
 	}
 
+	uint32 IntPacketType = uint32(PacketType);
+	Ar << IntPacketType;
+	if (Ar.IsLoading())
+	{
+		PacketType = EDeltaNetPacketType(IntPacketType);
+	}
 
 	// Array size in bits, using minimal number of bytes to write it out.
 	uint32 NumBits = RawData.Num();
@@ -239,7 +269,10 @@ bool FCommandFrameDeltaNetPacket::NetSerialize(FArchive& Ar, class UPackageMap* 
 		RawData.Init(0, NumBits);
 	}
 	// Array data
-	Ar.SerializeBits(RawData.GetData(), NumBits);
+	if (NumBits)
+	{
+		Ar.SerializeBits(RawData.GetData(), NumBits);
+	}
 
 	if (Ar.IsSaving() && bLocal)
 	{
@@ -293,7 +326,7 @@ void FCommandFrameInputNetPacket::WriteRedundantData(UNetConnection* Connection,
 
 	UE_LOG(LogCommandFrameNetPacket, Verbose, TEXT("WriteRedundantData Begin"));
 
-	UE_LOG(LogCommandFrameNetPacket, Verbose, TEXT("WriteRedundantData FramesCount[%d]"), InputFrames.Num());
+	UE_LOG(LogCommandFrameNetPacket, Log, TEXT("WriteRedundantData FramesCount[%d]"), InputFrames.Num());
 
 	int64 TotalNumBits = 0;
 	for (int32 Index = InputFrames.Num() - 1; Index >= 0; --Index)
@@ -329,6 +362,9 @@ void FCommandFrameInputNetPacket::WriteRedundantData(UNetConnection* Connection,
 
 			UE_LOG(LogCommandFrameNetPacket, Log, TEXT("WriteRedundantData Frame[%d] DataCount[%d] DataSize[%d]"), InputFrame.CommandFrame, DataCount, DataSize);
 		}
+
+		UE_LOG(LogCommandFrameNetPacket, Log, TEXT("WriteRedundantData Frame[%d] SharedSerialization NumBits[%d]"), InputFrame.CommandFrame, NetBitWriter.GetNumBits());
+
 		TotalNumBits += NetBitWriter.GetNumBits();
 	}
 

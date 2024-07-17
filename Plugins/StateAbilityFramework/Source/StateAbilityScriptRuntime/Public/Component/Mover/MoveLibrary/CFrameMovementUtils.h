@@ -7,6 +7,8 @@
 
 #include "CFrameMovementUtils.generated.h"
 
+class UCFrameMoverComponent;
+
 // Used to identify how to interpret a movement input vector's values
 UENUM(BlueprintType)
 enum class ECFrameMoveInputType : uint8
@@ -21,7 +23,7 @@ enum class ECFrameMoveInputType : uint8
 };
 
 // Input parameters for compute velocity function
-struct FCFrameComputeVelocityParams
+struct STATEABILITYSCRIPTRUNTIME_API FCFrameComputeVelocityParams
 {
 
 	float DeltaSeconds = 0.f;
@@ -36,10 +38,28 @@ struct FCFrameComputeVelocityParams
 	float Acceleration = 0.f;
 };
 
+// Input parameters for ComputeCombinedVelocity()
+struct STATEABILITYSCRIPTRUNTIME_API FCFrameComputeCombinedVelocityParams
+{
+	float DeltaSeconds = 0.f;
+	FVector InitialVelocity = FVector::ZeroVector;
+	FVector MoveDirectionIntent = FVector::ZeroVector;
+
+	// AuxState variables
+	float MaxSpeed = 0.f;
+	float TurningBoost = 0.f;
+	float Friction = 0.f;
+	float Deceleration = 0.f;
+	float Acceleration = 0.f;
+
+	FVector ExternalAcceleration = FVector::ZeroVector;
+	float OverallMaxSpeed = 0.f;
+};
+
 /**
  * MovementUtils: a collection of stateless static BP-accessible functions for a variety of movement-related operations
  */
-struct FCFrameMovementUtils
+struct STATEABILITYSCRIPTRUNTIME_API FCFrameMovementUtils
 {
 	static const double SMALL_MOVE_DISTANCE;
 
@@ -48,6 +68,12 @@ struct FCFrameMovementUtils
 
 	/** Returns new ground-based velocity (worldspace) based on previous state, movement intent (worldspace), and movement settings */
 	static FVector ComputeVelocity(const FCFrameComputeVelocityParams& InParams);
+
+	/** Returns new velocity based on previous state, movement intent, movement mode's influence and movement settings */
+	static FVector ComputeCombinedVelocity(const FCFrameComputeCombinedVelocityParams& InParams);
+
+	/** Returns velocity (units per second) contributed by gravitational acceleration over a given time */
+	static FVector ComputeVelocityFromGravity(const FVector& GravityAccel, float DeltaSeconds) { return GravityAccel * DeltaSeconds; }
 
 	/** Ensures input Vector (typically a velocity, acceleration, or move delta) is limited to a movement plane.
 	* @param bMaintainMagnitude - if true, vector will be scaled after projection in an attempt to keep magnitude the same

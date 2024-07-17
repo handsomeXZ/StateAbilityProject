@@ -6,7 +6,6 @@
 
 #include "CommandFrameSetting.h"
 #include "Net/CommandEnhancedInput.h"
-#include "Net/CommandFrameNetTypes.h"
 
 // @TODO: Manager本身不应该直接使用这个
 #include "Net/CommandFrameNetChannel.h"
@@ -23,6 +22,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogCommandFrameManager, Log, Verbose)
 
 const uint32 UCommandFrameManager::MIN_COMMANDFRAME_NUM = 4;
 const uint32 UCommandFrameManager::MAX_COMMANDFRAME_NUM = 32;
+const uint32 UCommandFrameManager::MAX_COMMANDFRAME_REDUNDANT_NUM = 16;
 const uint32 UCommandFrameManager::MAX_SNAPSHOTBUFFER_NUM = 32;
 
 const float UCommandFrameManager::FixedFrameRate = 30.0f;
@@ -212,47 +212,86 @@ void UCommandFrameManager::FlushCommandFrame_Fixed(float DeltaTime)
 	// Tick: TG_PrePhysics
 	// DeltaTime = FixedDeltaTime;
 
+	EndPrevFlushCommandFrame(DeltaTime);
+
+	AdvancedCommandFrame();
+
+	BeginNewFlushCommandFrame(DeltaTime);
+}
+
+void UCommandFrameManager::EndPrevFlushCommandFrame(float DeltaTime)
+{
 	PrevCommandFrame = RealCommandFrame;
 
 	//////////////////////////////////////////////////////////////////////////
 	// 处理前一帧
+	// 第0帧空，不做处理
 	if (RealCommandFrame)
 	{
-		// 第0帧空，不做处理
-
+		// 因为玩家操作不会因为回滚等情况而被修改，所以可以先行记录。
 		if (GetWorld()->GetNetMode() == ENetMode::NM_Client)
 		{
-			// 记录上一帧的数据（状态快照、操作快照）
-			UpdateLocalHistoricalData();
+			// 记录上一帧的命令快照
+			RecordCommandSnapshot();
+			
+			// 发送InputPacket
+			ClientSendInputNetPacket();
 		}
-		else if (GetWorld()->GetNetMode() == ENetMode::NM_DedicatedServer)
+		
+		// 检查并处理有序的Delta包等，因此这里有可能会触发回滚
+		OnPreEndFrame.Broadcast(DeltaTime, RealCommandFrame, InternalCommandFrame);
+
+		// 移动的Tick 和 状态快照基本会在这里执行
+		OnEndFrame.Broadcast(DeltaTime, RealCommandFrame, InternalCommandFrame);
+		
+		if (GetWorld()->GetNetMode() == ENetMode::NM_DedicatedServer)
 		{
 			ServerSendDeltaNetPacket();
 		}
 
-		OnEndFrame.Broadcast(DeltaTime, RealCommandFrame, InternalCommandFrame);
+		OnPostEndFrame.Broadcast(DeltaTime, RealCommandFrame, InternalCommandFrame);
+
+#if WITH_EDITOR
+		if (GetWorld()->GetNetMode() == ENetMode::NM_Client)
+		{
+			if (!DebugProxy_ClientFrameTimeline.IsValid())
+			{
+				DebugProxy_ClientFrameTimeline = FCFrameSimpleDebugMultiTimeline::CreateDebugProxy(FName(TEXT("CommandFrameManager")), LOCTEXT("CommandFrameManager", "[Client] FrameTimeline"), 200, 4, 20, FVector2f(350.0f, 50.0f));
+			}
+
+			if (IsInRewinding())
+			{
+				DebugProxy_ClientFrameTimeline->Push(FCFrameSimpleDebugMultiTimeline::FTimePoint(InternalCommandFrame, FColor(230, 126, 34)));
+			}
+			else
+			{
+				DebugProxy_ClientFrameTimeline->Push(FCFrameSimpleDebugMultiTimeline::FTimePoint(RealCommandFrame, FColor(39, 174, 96)));
+			}
+		}
+#endif
 	}
+}
 
-	//////////////////////////////////////////////////////////////////////////
-
-
-
-
-
-	//////////////////////////////////////////////////////////////////////////
-	// 预处理
-
+void UCommandFrameManager::AdvancedCommandFrame()
+{
 	// 命令帧进入新的一帧
 	if (!IsInRewinding())
 	{
 		++RealCommandFrame;
 	}
 	++InternalCommandFrame;
+}
 
-	OnBeginFrame.Broadcast(DeltaTime, RealCommandFrame, InternalCommandFrame);
+void UCommandFrameManager::BeginNewFlushCommandFrame(float DeltaTime)
+{
+	//////////////////////////////////////////////////////////////////////////
+	// 预处理
 
+	OnPreBeginFrame.Broadcast(DeltaTime, RealCommandFrame, InternalCommandFrame);
 	//////////////////////////////////////////////////////////////////////////
 	// 处理当前帧
+
+	OnBeginFrame.Broadcast(DeltaTime, RealCommandFrame, InternalCommandFrame);
 
 	if (GetWorld()->GetNetMode() == ENetMode::NM_DedicatedServer)
 	{
@@ -266,22 +305,43 @@ void UCommandFrameManager::FlushCommandFrame_Fixed(float DeltaTime)
 		// 仅客户端需要更新时间膨胀
 		TimeDilationHelper.FixedTick(GetWorld(), DeltaTime);
 	}
+
+	OnPostBeginFrame.Broadcast(DeltaTime, RealCommandFrame, InternalCommandFrame);
 }
 
 void UCommandFrameManager::ReplayFrames(uint32 RewindedFrame)
 {
+#if WITH_EDITOR
+	if (!DebugProxy_ClientFrameTimeline.IsValid())
+	{
+		DebugProxy_ClientFrameTimeline = FCFrameSimpleDebugMultiTimeline::CreateDebugProxy(FName(TEXT("CommandFrameManager")), LOCTEXT("CommandFrameManager", "[Client] FrameTimeline"), 200, 4, 20, FVector2f(350.0f, 50.0f));
+	}
+
+	DebugProxy_ClientFrameTimeline->Push(FCFrameSimpleDebugMultiTimeline::FTimePoint(RewindedFrame, FColor(192, 57, 43)));
+#endif
+
+	TimeDilationHelper.Update(GetWorld(), true);
+
 	// 已将状态重置到RewindedFrame了，需要从ICF开始重新模拟到RCF。
 	InternalCommandFrame = RewindedFrame + 1;
-	++RealCommandFrame;
 
-	for (; InternalCommandFrame <= RealCommandFrame;)
+	for (; InternalCommandFrame < RealCommandFrame;)
 	{
+		BeginNewFlushCommandFrame(FixedDeltaTime);
+
 		SimulateInput(InternalCommandFrame);
 
-		FlushCommandFrame_Fixed(FixedDeltaTime);
+		EndPrevFlushCommandFrame(FixedDeltaTime);
+
+		AdvancedCommandFrame();
 	}
 
 	InternalCommandFrame = RealCommandFrame;
+
+	// 到这里后，已经是进入了原本的RCF的帧处理期间。
+	// 此时需要最后模拟一次输入
+	BeginNewFlushCommandFrame(FixedDeltaTime);
+	SimulateInput(RealCommandFrame);
 }
 
 void UCommandFrameManager::UpdateTimeDilationHelper(uint32 ServerCommandBufferNum, bool bFault)
@@ -339,7 +399,7 @@ APlayerController* UCommandFrameManager::GetLocalPlayerController()
 	return nullptr;
 }
 
-void UCommandFrameManager::UpdateLocalHistoricalData()
+void UCommandFrameManager::RecordCommandSnapshot()
 {
 	if (IsInRewinding())
 	{
@@ -347,7 +407,6 @@ void UCommandFrameManager::UpdateLocalHistoricalData()
 	}
 
 	// 处理前一帧
-
 	APlayerController* PC = GetLocalPlayerController();
 	APlayerState* PS = PC->GetPlayerState<APlayerState>();
 
@@ -360,14 +419,6 @@ void UCommandFrameManager::UpdateLocalHistoricalData()
 		// 如果预分配的RawData不为空，则开始填充
 		InputSystem->PopInputsWithRawData(RawData);
 	}
-	
-
-	// 状态快照
-
-
-
-	// 发送InputPacket
-	ClientSendInputNetPacket(PC);
 
 
 #if WITH_EDITOR
@@ -392,15 +443,22 @@ void UCommandFrameManager::UpdateLocalHistoricalData()
 
 	if (!DebugProxy_ClientCmdBufferChart.IsValid())
 	{
-		DebugProxy_ClientCmdBufferChart = FCFrameSimpleDebugChart::CreateDebugProxy(FName(TEXT("ClientCommandBuffer")), LOCTEXT("ClientCommandBuffer", "[Client] CommandBuffer"), 16, FVector2D(-1, MAX_COMMANDFRAME_NUM), 20.0f, FVector2f(200.0f, 150.0f), FColor::Green, true);
+		DebugProxy_ClientCmdBufferChart = FCFrameSimpleDebugChart::CreateDebugProxy(FName(TEXT("ClientCommandBuffer")), LOCTEXT("ClientCommandBuffer", "[Client] CommandBuffer"), 16, FVector2D(-1, MAX_COMMANDFRAME_NUM), 20.0f, FVector2f(200.0f, 150.0f));
 	}
 
-	DebugProxy_ClientCmdBufferChart->Push(FVector2D(RealCommandFrame, CommandBuffer.Count()));
+	DebugProxy_ClientCmdBufferChart->Push(FCFDebugChartPoint(FVector2D(RealCommandFrame, CommandBuffer.Count())));
 #endif
 }
 
-void UCommandFrameManager::ClientSendInputNetPacket(APlayerController* PC)
+void UCommandFrameManager::ClientSendInputNetPacket()
 {
+	if (IsInRewinding())
+	{
+		return;
+	}
+
+	APlayerController* PC = GetLocalPlayerController();
+
 	if (!IsValid(LocalNetChannel))
 	{
 		return;
@@ -409,8 +467,8 @@ void UCommandFrameManager::ClientSendInputNetPacket(APlayerController* PC)
 	UE_LOG(LogCommandFrameManager, Verbose, TEXT("Waiting to send InputNetPacket Frame[%d]"), RealCommandFrame);
 
 	
-
-	TCircularQueueView<FCommandFrameInputFrame> RangeView = CommandBuffer.ReadRangeData_Shrink(RealCommandFrame, CommandBuffer.Count());
+	uint32 RedundantNum = FMath::Min(CommandBuffer.Count(), MAX_COMMANDFRAME_REDUNDANT_NUM);
+	TCircularQueueView<FCommandFrameInputFrame> RangeView = CommandBuffer.ReadRangeData_Shrink(RealCommandFrame, RedundantNum);
 	FCommandFrameInputNetPacket InputNetPacket(PC->GetNetConnection(), RangeView);
 	LocalNetChannel->ClientSend_CommandFrameInputNetPacket(InputNetPacket);
 }
@@ -419,6 +477,15 @@ void UCommandFrameManager::ClientReceiveCommandAck(uint32 ServerCommandFrame)
 {
 	// 仅对输入缓冲区进行标记Ack
 	CommandBuffer.AckData(ServerCommandFrame);
+}
+
+FStructView UCommandFrameManager::ReadAttributeFromSnapshotBuffer(uint32 CommandFrame, const UScriptStruct* Key)
+{
+	if (FCommandFrameAttributeSnapshot* AttributeSnapshot = AttributeSnapshotBuffer.ReadData(CommandFrame))
+	{
+		return FStructView(Key, AttributeSnapshot->ReadItemData(Key));
+	}
+	return nullptr;
 }
 
 void UCommandFrameManager::ResetCommandFrame(uint32 CommandFrame)
@@ -501,7 +568,7 @@ void UCommandFrameManager::SimulateInput(uint32 CommandFrame)
 			}
 			else
 			{
-				FCFDebugHelper::Get().DrawDebugString_3D(Pawn->GetActorLocation() + FVector(0.0f, 0.0f, 100.0f), FString::Printf(TEXT("[Client Rewind]CmdCount: %d"), InputCount), nullptr, FColor::Green, -1, false, 1.0f);
+				FCFDebugHelper::Get().DrawDebugString_3D(Pawn->GetActorLocation() + FVector(0.0f, 0.0f, 100.0f), FString::Printf(TEXT("[Client Rewind]CmdCount: %d"), InputCount), nullptr, FColor::Red, -1, false, 1.0f);
 			}
 		}
 	}
@@ -575,6 +642,12 @@ void UCommandFrameManager::SimulateInput(uint32 CommandFrame)
 
 	}
 
+
+	// 在模拟Input完成后，需要把存入的InputSysytem记录的数据全部移除
+	if (UCommandEnhancedInputSubsystem* InputSystem = GetWorld()->GetSubsystem<UCommandEnhancedInputSubsystem>())
+	{
+		InputSystem->ClearInput();
+	}
 }
 
 void UCommandFrameManager::BuildInputEventMap(APlayerController* PC, TMap<const UInputAction*, TArray<TUniquePtr<FEnhancedInputActionEventBinding>>>& InputEventMap)
@@ -667,10 +740,12 @@ void UCommandFrameManager::PostLogin(AGameModeBase* GameMode, APlayerController*
 {
 	if (GetWorld()->GetAuthGameMode() == GameMode)
 	{
-		if (ACommandFrameNetChannelBase** ChannelPtr = NetChannels.Find(PC))
+		if (ACommandFrameNetChannelBase** ChannelPtr = NetChannels.Find(PC->GetNetConnection()))
 		{
 			// 重新指向新的Owner
 			(*ChannelPtr)->SetOwner(PC);
+
+			BroadcastOnFrameNetChannelRegistered(*ChannelPtr);
 		}
 		else
 		{
@@ -682,7 +757,9 @@ void UCommandFrameManager::PostLogin(AGameModeBase* GameMode, APlayerController*
 			Channel->RegisterCFrameManager(this);
 			Channel->SetOwner(PC);
 
-			NetChannels.Add(PC, Channel);
+			NetChannels.Add(PC->GetNetConnection(), Channel);
+
+			BroadcastOnFrameNetChannelRegistered(Channel);
 		}
 	}
 }
@@ -691,12 +768,12 @@ void UCommandFrameManager::LoginOut(AGameModeBase* GameMode, AController* PC)
 {
 	if (GetWorld()->GetAuthGameMode() == GameMode)
 	{
-		if (auto ChannelPtr = NetChannels.Find(PC))
+		if (auto ChannelPtr = NetChannels.Find(PC->GetNetConnection()))
 		{
 			(*ChannelPtr)->Destroy();
 		}
 
-		NetChannels.Remove(PC);
+		NetChannels.Remove(PC->GetNetConnection());
 	}
 }
 
@@ -706,6 +783,52 @@ void UCommandFrameManager::RegisterClientChannel(ACommandFrameNetChannelBase* Ch
 	if (PC)
 	{
 		LocalNetChannel = Channel;
+		NetChannels.Add(PC->GetNetConnection(), Channel);
+
+		BroadcastOnFrameNetChannelRegistered(Channel);
+	}
+}
+
+void UCommandFrameManager::BindOnFrameNetChannelRegistered(UActorComponent* Key, FOnFrameNetChannelRegistered OnFrameNetChannelRegistered)
+{
+	NetChannelDelegateMap.Add(Key, OnFrameNetChannelRegistered);
+
+	UNetConnection* Connection = Key->GetOwner()->GetNetConnection();
+
+	if (IsValid(Connection))
+	{
+		if (ACommandFrameNetChannelBase** ChannelPtr = NetChannels.Find(Connection))
+		{
+			BroadcastOnFrameNetChannelRegistered(*ChannelPtr);
+		}
+	}
+}
+
+void UCommandFrameManager::BindOnFrameNetChannelRegistered(AActor* Key, FOnFrameNetChannelRegistered OnFrameNetChannelRegistered)
+{
+	NetChannelDelegateMap.Add(Key, OnFrameNetChannelRegistered);
+
+	UNetConnection* Connection = Key->GetNetConnection();
+
+	if (IsValid(Connection))
+	{
+		if (ACommandFrameNetChannelBase** ChannelPtr = NetChannels.Find(Connection))
+		{
+			BroadcastOnFrameNetChannelRegistered(*ChannelPtr);
+		}
+	}
+}
+
+void UCommandFrameManager::UnBindOnFrameNetChannelRegistered(UObject* Key)
+{
+	NetChannelDelegateMap.Remove(Key);
+}
+
+void UCommandFrameManager::BroadcastOnFrameNetChannelRegistered(ACommandFrameNetChannelBase* Channel)
+{
+	for (auto& DelegatePair : NetChannelDelegateMap)
+	{
+		DelegatePair.Value.ExecuteIfBound(Channel);
 	}
 }
 

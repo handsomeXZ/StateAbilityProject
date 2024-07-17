@@ -30,7 +30,9 @@ public:
 	virtual void UninitializeComponent() override;
 	virtual void OnRegister() override;
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
+	virtual void PostBeginPlay();
 	virtual void FixedTick(float DeltaTime, uint32 RCF, uint32 ICF);
 	virtual void OnHandleImpact(const FHitResult& Hit, const FName ModeName, const FVector& MoveDelta);
 
@@ -60,8 +62,8 @@ protected:
 	void UpdateTickRegistration();
 
 	// 检查客户端是否超过了允许的位置误差
-	bool CheckClientExceedsAllowablePositionError(const FVector& ServerWorldLocation);
-	void AdjustClientPosition(FVector WorldLocation, FVector WorldVelocity, FRotator WorldOrientation, UPrimitiveComponent* MovementBase, FName MovementBaseBoneName);
+	bool CheckClientExceedsAllowablePositionError(FNetProcedureSyncParam& SyncParam, const FVector& ServerWorldLocation);
+	void AdjustClientPosition(FNetProcedureSyncParam& SyncParam, FVector WorldLocation, FVector WorldVelocity, FRotator WorldOrientation, UPrimitiveComponent* MovementBase, FName MovementBaseBoneName);
 protected:
 	//////////////////////////////////////////////////////////////////////////
 	// CallBack
@@ -70,6 +72,7 @@ protected:
 	UFUNCTION()
 	virtual void OnBeginOverlap(UPrimitiveComponent* OverlappedComp, AActor* Other, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult) {}
 
+	void OnFrameNetChannelRegistered(ACommandFrameNetChannelBase* Channel);
 	//////////////////////////////////////////////////////////////////////////
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Move)

@@ -32,8 +32,10 @@ class UCFrameMoveModeStateMachine : public UObject
 public:
 	void Init(FCFrameMovementConfig& Config);
 	void FixedTick(float DeltaTime, uint32 RCF, uint32 ICF);
-	void UpdateTransition() {}
+	void UpdateTransition();
+	void OnClientRewind();
 
+	const FCFrameMovementContext& GetMovementContext() { return Context; }
 	UCFrameMovementMode* GetCurrentMode() { return CurrentMode; }
 	FName GetCurrentModeName() { return CurrentModeName; }
 
@@ -48,6 +50,7 @@ protected:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UCFrameMovementMode> CurrentMode;
+	UPROPERTY(Transient)
 	FName CurrentModeName;
 	UPROPERTY(Transient)
 	TObjectPtr<UCFrameMovementMixer> CurrentMixer;
@@ -55,31 +58,4 @@ protected:
 	FCFrameMovementContext Context;
 private:
 	
-};
-
-UCLASS(Abstract, BlueprintType)
-class UCFrameMoveModeTransition : public UObject
-{
-	GENERATED_BODY()
-	friend class UCFrameMoveModeStateMachine;
-public:
-	UCFrameMoveModeTransition() {}
-	UCFrameMoveModeTransition(UClass* InFromModeClass, UClass* InToModeClass) {}
-
-	//virtual FTransitionEvalResult OnEvaluate(const FCFrameMovementContext& Params) const {}
-
-protected:
-	UPROPERTY()
-	TSubclassOf<UCFrameMovementMode> FromModeClass;
-	UPROPERTY()
-	TSubclassOf<UCFrameMovementMode> ToModeClass;
-};
-
-UCLASS(BlueprintType, meta = (DisplayName = "WalkToFall（Simple）"))
-class UCFrameMoveModeTransition_WalkToFall : public UCFrameMoveModeTransition
-{
-	GENERATED_BODY()
-
-public:
-	//virtual FTransitionEvalResult OnEvaluate(const FCFrameMovementContext& Params) const override {}
 };

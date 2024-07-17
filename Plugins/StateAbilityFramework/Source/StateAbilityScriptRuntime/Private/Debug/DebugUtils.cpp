@@ -1,5 +1,6 @@
 #include "Debug/DebugUtils.h"
 
+#include "GlobalRenderResources.h"
 #include "DrawDebugHelpers.h"
 #include "CanvasItem.h"
 #include "Engine/Canvas.h"
@@ -273,10 +274,14 @@ void FCFDebugHelper::DrawDebugString_2D(FDebug2DContext& Context, const FText& I
 		InFont = GEngine->GetMediumFont();
 	}
 
+	FColor PrevColor = PRIVATE_GET_NAMESPACE(FCFDebugHelper, Context.Canvas, DrawColor);
+
+	Context.Canvas->SetDrawColor(Color);
 	Context.YPos += Context.Canvas->DrawText(InFont, InText, X, Context.YPos, Scale.X, Scale.Y);
+	Context.Canvas->SetDrawColor(PrevColor);
 }
 
-void FCFDebugHelper::DrawDebugChart_2D(FDebug2DContext& Context, FText Title, TArray<FVector2D>& Points, FVector2D YRange, float PivotX, FVector2f Size, FColor Color, bool bIntValueText, UFont* InFont /* = nullptr */)
+void FCFDebugHelper::DrawDebugChart_2D(FDebug2DContext& Context, FText Title, TArray<FCFDebugChartPoint>& Points, FVector2D ChartY_ValueRange, float ChartPivotX, FVector2f ChartSize, UFont* InFont /* = nullptr */)
 {
 	// 默认Points是有序的
 
@@ -294,31 +299,31 @@ void FCFDebugHelper::DrawDebugChart_2D(FDebug2DContext& Context, FText Title, TA
 
 	float MaxYValue = -UE_FLOAT_NON_FRACTIONAL;
 	float MinYValue = UE_FLOAT_NON_FRACTIONAL;
-	if (YRange.IsNearlyZero())
+	if (ChartY_ValueRange.IsNearlyZero())
 	{
-		for (FVector2D& P : Points)
+		for (auto& P : Points)
 		{
-			MaxYValue = FMath::Max(MaxYValue, P.Y);
-			MinYValue = FMath::Min(MinYValue, P.Y);
+			MaxYValue = FMath::Max(MaxYValue, P.Value.Y);
+			MinYValue = FMath::Min(MinYValue, P.Value.Y);
 		}
 	}
 	else
 	{
-		MaxYValue = YRange.Y;
-		MinYValue = YRange.X;
+		MaxYValue = ChartY_ValueRange.Y;
+		MinYValue = ChartY_ValueRange.X;
 	}
 
 	bool bAllSameYValue = (MaxYValue - MinYValue) < FLOAT_NORMAL_THRESH;
 	float ValueHeight = MaxYValue - MinYValue;
-	float WidthStep = Size.X / (float)Points.Num();
-	float HeightStep = Size.Y / (float)Points.Num();
+	float WidthStep = ChartSize.X / (float)Points.Num();
+	float HeightStep = ChartSize.Y / (float)Points.Num();
 
-	float XStartPos = PivotX;
-	float YStartPos = Context.YPos + Size.Y;
-	float XEndPos = PivotX + Size.X;
+	float XStartPos = ChartPivotX;
+	float YStartPos = Context.YPos + ChartSize.Y;
+	float XEndPos = ChartPivotX + ChartSize.X;
 	float YEndPos = Context.YPos;
 
-	auto GetPoint = [WidthStep, MaxYValue, MinYValue, ValueHeight, bAllSameYValue, XStartPos, YStartPos, XEndPos, YEndPos, Size](FVector2D Point, int32 ID) -> FVector2D {
+	auto GetPoint = [WidthStep, MaxYValue, MinYValue, ValueHeight, bAllSameYValue, XStartPos, YStartPos, XEndPos, YEndPos, ChartSize](FVector2D Point, int32 ID) -> FVector2D {
 		
 		FVector2D Result(XStartPos + ID * WidthStep, 0.0);
 		if (bAllSameYValue)
@@ -327,23 +332,23 @@ void FCFDebugHelper::DrawDebugChart_2D(FDebug2DContext& Context, FText Title, TA
 		}
 		else
 		{
-			Result.Y = YStartPos - (Point.Y - MinYValue) / ValueHeight * Size.Y;
+			Result.Y = YStartPos - (Point.Y - MinYValue) / ValueHeight * ChartSize.Y;
 		}
 		return Result;
 	};
 
-	auto GetValueText = [bIntValueText](double Value) -> FText {
-		if (bIntValueText)
+	auto GetValueText = [](FCFDebugChartPoint& Point) -> FText {
+		if (Point.ValueType == FCFDebugChartPoint::EPointValueType::Int)
 		{
-			return FText::FromString(FString::FromInt(Value));
+			return FText::FromString(FString::FromInt(Point.Value.Y));
 		}
 		else
 		{
-			return FText::FromString(FString::SanitizeFloat(Value));
+			return FText::FromString(FString::SanitizeFloat(Point.Value.Y));
 		}
 	};
 
-	auto GetValuePoint = [XStartPos, YStartPos, XEndPos, YEndPos, HeightStep, Size](int32 ID) -> FVector2D {
+	auto GetValuePoint = [XStartPos, YStartPos, XEndPos, YEndPos, HeightStep, ChartSize](int32 ID) -> FVector2D {
 		return FVector2D(XEndPos, YEndPos + HeightStep * ID);
 	};
 
@@ -353,23 +358,29 @@ void FCFDebugHelper::DrawDebugChart_2D(FDebug2DContext& Context, FText Title, TA
 	Context.Canvas->K2_DrawLine(FVector2D(XStartPos, YStartPos), FVector2D(XEndPos, YStartPos), 1.0f, FColor::Black);	// X 轴
 	Context.Canvas->K2_DrawLine(FVector2D(XStartPos, YStartPos), FVector2D(XStartPos, YEndPos), 1.0f, FColor::Black);	// Y 轴
 
-	// 连线、标点、数据列
-	FVector2D PointLocation = GetPoint(Points[0], 0);
+	// 连线、数据列
+	FVector2D PointLocation = GetPoint(Points[0].Value, 0);
 	FVector2D TextLocation = GetValuePoint(0);
-	Context.Canvas->K2_DrawBox(PointLocation, FVector2D(2.0f , 2.0f), 1.0f, Color);
-	Context.Canvas->DrawText(InFont, GetValueText(Points[0].Y), TextLocation.X, TextLocation.Y, 0.5f, 0.5f);
+	Context.Canvas->DrawText(InFont, GetValueText(Points[0]), TextLocation.X, TextLocation.Y, 0.5f, 0.5f);
 	for (int32 i = 1; i < Points.Num(); ++i)
 	{
-		Context.Canvas->K2_DrawBox(GetPoint(Points[i], i), FVector2D(2.0f, 2.0f), 1.0f, Color);
-
-		PointLocation = GetPoint(Points[i], i);
+		PointLocation = GetPoint(Points[i].Value, i);
 		TextLocation = GetValuePoint(i);
-		Context.Canvas->K2_DrawLine(GetPoint(Points[i-1], i-1), PointLocation, 1.0f, Color);
-		Context.Canvas->DrawText(InFont, GetValueText(Points[i].Y), TextLocation.X, TextLocation.Y, 0.5f, 0.5f);
+		Context.Canvas->K2_DrawLine(GetPoint(Points[i-1].Value, i-1), PointLocation, 1.0f, Points[i].PointColor);
+		Context.Canvas->DrawText(InFont, GetValueText(Points[i]), TextLocation.X, TextLocation.Y, 0.5f, 0.5f);
 	}
 
-	Context.YPos += Size.Y;
+	// 标点
+	PointLocation = GetPoint(Points[0].Value, 0);
+	Context.Canvas->K2_DrawBox(PointLocation, FVector2D(2.0f, 2.0f), 1.0f, Points[0].PointColor);
+	for (int32 i = 1; i < Points.Num(); ++i)
+	{
+		Context.Canvas->K2_DrawBox(GetPoint(Points[i].Value, i), FVector2D(2.0f, 2.0f), 1.0f, Points[i].PointColor);
+	}
 
+	Context.YPos += ChartSize.Y;
+
+	// 标题
 	if (!Title.IsEmpty())
 	{
 		Context.YPos += 3.f;
@@ -380,48 +391,52 @@ void FCFDebugHelper::DrawDebugChart_2D(FDebug2DContext& Context, FText Title, TA
 }
 
 //////////////////////////////////////////////////////////////////////////
-FCFrameSimpleDebugText::FCFrameSimpleDebugText(FText InInitText, float PivotX, FVector2f Scale, FColor Color)
-	: Text(InInitText)
+
+// ---------------------------------------------
+// FCFrameSimpleDebugText
+FCFrameSimpleDebugText::FCFrameSimpleDebugText(TArray<FDebugTextItem>& InInitTexts, float PivotX)
+	: TextData(InInitTexts)
 	, TextPivotX(PivotX)
-	, TextScale(Scale)
-	, TextColor(Color)
 {
 	
 }
 
-TSharedPtr<FCFrameSimpleDebugText> FCFrameSimpleDebugText::CreateDebugProxy(FName DebugName, FText InInitText, float PivotX, FVector2f Scale, FColor Color)
+TSharedPtr<FCFrameSimpleDebugText> FCFrameSimpleDebugText::CreateDebugProxy(FName DebugName, TArray<FDebugTextItem>& InInitTexts, float PivotX)
 {
-	TSharedPtr<FCFrameSimpleDebugText> DebugProxy = MakeShared<FCFrameSimpleDebugText>(InInitText, PivotX, Scale, Color);
+	TSharedPtr<FCFrameSimpleDebugText> DebugProxy = MakeShared<FCFrameSimpleDebugText>(InInitTexts, PivotX);
 	FCFDebugHelper::Get().RegisterDebugProxy(DebugName, DebugProxy);
 	return DebugProxy;
 }
 
 void FCFrameSimpleDebugText::ShowDebug(FCFDebugHelper::FDebug2DContext& Context)
 {
-	FCFDebugHelper::Get().DrawDebugString_2D(Context, Text, TextPivotX, TextScale, TextColor, nullptr);
+	for (FDebugTextItem& TextItem : TextData)
+	{
+		FCFDebugHelper::Get().DrawDebugString_2D(Context, TextItem.Text, TextPivotX, TextItem.TextScale, TextItem.TextColor, nullptr);
+	}
 }
 
-void FCFrameSimpleDebugText::UpdateText(FText NewText)
+void FCFrameSimpleDebugText::UpdateText(TArray<FDebugTextItem>& NewTextItem)
 {
-	Text = NewText;
+	TextData = NewTextItem;
 }
 
 
-FCFrameSimpleDebugChart::FCFrameSimpleDebugChart(FText Title, int32 PointCount, FVector2D YRange, float InChartPivotX, FVector2f InChartSize, FColor InColor, bool InbIntValueText /* = false */)
+// ---------------------------------------------
+// FCFrameSimpleDebugChart
+FCFrameSimpleDebugChart::FCFrameSimpleDebugChart(const FText& Title, int32 PointCount, FVector2D InChartY_ValueRange, float InChartPivotX, FVector2f InChartSize)
 	: ChartTitle(Title)
 	, ChartPivotX(InChartPivotX)
 	, ChartSize(InChartSize)
-	, ChartColor(InColor)
-	, ChartYRange(YRange)
-	, bIntValueText(InbIntValueText)
+	, ChartY_ValueRange(InChartY_ValueRange)
 	, MaxIndex(PointCount - 1)
 {
-	Points.SetNum(PointCount);
+	Points.SetNum(FMath::RoundUpToPowerOfTwo(PointCount));
 }
 
-TSharedPtr<FCFrameSimpleDebugChart> FCFrameSimpleDebugChart::CreateDebugProxy(FName DebugName, FText Title, int32 PointCount, FVector2D YRange, float InChartPivotX, FVector2f InChartSize, FColor InColor, bool InbIntValueText)
+TSharedPtr<FCFrameSimpleDebugChart> FCFrameSimpleDebugChart::CreateDebugProxy(FName DebugName, const FText& Title, int32 PointCount, FVector2D InChartY_ValueRange, float InChartPivotX, FVector2f InChartSize)
 {
-	TSharedPtr<FCFrameSimpleDebugChart> DebugProxy = MakeShared<FCFrameSimpleDebugChart>(Title, PointCount, YRange, InChartPivotX, InChartSize, InColor, InbIntValueText);
+	TSharedPtr<FCFrameSimpleDebugChart> DebugProxy = MakeShared<FCFrameSimpleDebugChart>(Title, PointCount, InChartY_ValueRange, InChartPivotX, InChartSize);
 	FCFDebugHelper::Get().RegisterDebugProxy(DebugName, DebugProxy);
 	return DebugProxy;
 }
@@ -433,7 +448,8 @@ void FCFrameSimpleDebugChart::ShowDebug(FCFDebugHelper::FDebug2DContext& Context
 		return;
 	}
 
-	TArray<FVector2D> DrawPoints;
+	// @TODO：可以考虑用CircleQueueView
+	TArray<FCFDebugChartPoint> DrawPoints;
 	DrawPoints.Empty(Num);
 	for (int32 i = 0; i < Num; ++i)
 	{
@@ -441,15 +457,21 @@ void FCFrameSimpleDebugChart::ShowDebug(FCFDebugHelper::FDebug2DContext& Context
 		DrawPoints.Add(Points[index]);
 	}
 
-	FCFDebugHelper::Get().DrawDebugChart_2D(Context, ChartTitle, DrawPoints, ChartYRange, ChartPivotX, ChartSize, ChartColor, bIntValueText, nullptr);
+	FCFDebugHelper::Get().DrawDebugChart_2D(Context, ChartTitle, DrawPoints, ChartY_ValueRange, ChartPivotX, ChartSize, nullptr);
 }
 
-void FCFrameSimpleDebugChart::Push(FVector2D NewPoint)
+void FCFrameSimpleDebugChart::Push(const FCFDebugChartPoint& NewPoint)
 {
-	Head = (Head + 1) & MaxIndex;
-	Num = FMath::Min(Num + 1, MaxIndex + 1);
+	if (Num <= MaxIndex)
+	{
+		++Num;
+	}
+	else
+	{
+		Head = (Head + 1) & MaxIndex;
+	}
 
-	int32 NewIndex = (Head + Num) & MaxIndex;
+	int32 NewIndex = (Head + Num - 1) & MaxIndex;
 
 	Points[NewIndex] = NewPoint;
 }
@@ -463,4 +485,182 @@ void FCFrameSimpleDebugChart::Pop()
 
 	Head = (Head + 1) & MaxIndex;
 	--Num;
+}
+
+
+// ---------------------------------------------
+// FCFrameSimpleDebugMultiTimeline
+void FCFrameSimpleDebugMultiTimeline::FTimelineItem::Push(const FTimePoint& NewPoint)
+{
+	if (Num <= MaxIndex)
+	{
+		++Num;
+	}
+	else
+	{
+		Head = (Head + 1) & MaxIndex;
+	}
+
+	int32 NewIndex = (Head + Num - 1) & MaxIndex;
+
+	Points[NewIndex] = NewPoint;
+}
+
+void FCFrameSimpleDebugMultiTimeline::FTimelineItem::Reset()
+{
+	Head = 0;
+	Num = 0;
+}
+
+FCFrameSimpleDebugMultiTimeline::FTimePoint* FCFrameSimpleDebugMultiTimeline::FTimelineItem::GetLastPoint()
+{
+	if (Num)
+	{
+		int32 NewIndex = (Head + Num - 1) & MaxIndex;
+
+		return &Points[NewIndex];
+	}
+
+	return nullptr;
+}
+
+FCFrameSimpleDebugMultiTimeline::FCFrameSimpleDebugMultiTimeline(const FText& InTitle, int32 InTimePointCount, int32 InTimelineCount, float InPivotX, FVector2f InTimelineSize)
+	: TimelineTitle(InTitle)
+	, TimePointCount(FMath::RoundUpToPowerOfTwo(InTimePointCount))
+	, TimelinePivotX(InPivotX)
+	, TimelineSize(InTimelineSize)
+{
+	TimelineItems.Empty(FMath::RoundUpToPowerOfTwo(InTimelineCount));
+	MaxIndex = FMath::RoundUpToPowerOfTwo(InTimelineCount) - 1;
+	Head = 0;
+	Num = 1;
+	
+	
+	for (int32 LineIndex = 0; LineIndex < InTimelineCount; ++LineIndex)
+	{
+		TimelineItems.Emplace(TimePointCount);
+	}
+}
+
+TSharedPtr<FCFrameSimpleDebugMultiTimeline> FCFrameSimpleDebugMultiTimeline::CreateDebugProxy(FName DebugName, const FText& InTitle, int32 InTimePointCount, int32 InTimelineCount, float InPivotX, FVector2f InTimelineSize)
+{
+	TSharedPtr<FCFrameSimpleDebugMultiTimeline> DebugProxy = MakeShared<FCFrameSimpleDebugMultiTimeline>(InTitle, InTimePointCount, InTimelineCount, InPivotX, InTimelineSize);
+	FCFDebugHelper::Get().RegisterDebugProxy(DebugName, DebugProxy);
+	return DebugProxy;
+}
+
+void DrawLine_Translucent_2D(UCanvas* Canvas, FVector2D Position, FVector2D Size, FLinearColor RenderColor)
+{
+	if (IsValid(Canvas))
+	{
+		FCanvasTileItem TileItem(Position, GWhiteTexture, Size, RenderColor);
+		TileItem.SetColor(RenderColor);
+		TileItem.BlendMode = SE_BLEND_Translucent;
+		Canvas->DrawItem(TileItem);
+	}
+}
+
+void FCFrameSimpleDebugMultiTimeline::ShowDebug(FCFDebugHelper::FDebug2DContext& Context)
+{
+	UFont* Font = GEngine->GetMediumFont();
+	FColor PrevFontColor = PRIVATE_GET_NAMESPACE(FCFDebugHelper, Context.Canvas, DrawColor);
+
+	FVector2f LeftTop = FVector2f(TimelinePivotX, Context.YPos);
+	FVector2f RightBottom = FVector2f(TimelinePivotX + TimelineSize.X, Context.YPos + TimelineSize.Y);
+
+	// 背景
+	DrawLine_Translucent_2D(Context.Canvas, FVector2D(LeftTop), FVector2D(TimelineSize), FLinearColor(0, 0, 0, 0.5));
+
+	static float LineSpace = 5.f;
+	float PerLineHeight = (TimelineSize.Y - TimelineItems.Num() * LineSpace - LineSpace) / (float)TimelineItems.Num();
+	float PerPointWidth = TimelineSize.X / (float)TimePointCount;
+
+	float LineY = Context.YPos + LineSpace;
+	float Opacity = 1.f;
+	for (int32 i = 0; i < Num; ++i)
+	{
+		int32 index = (Head + Num - i - 1) & MaxIndex;
+		FTimelineItem& Timeline = TimelineItems[index];
+
+		TArray<FTimePoint>& Points = Timeline.Points;
+		if (Timeline.Num)
+		{
+			FColor PrevColor = Points[Timeline.Head].PointColor;
+			float LineX_Left = TimelinePivotX;
+			float LineX_Right = TimelinePivotX;
+			
+			for (int32 j = 1; j < Timeline.Num; ++j)
+			{
+				int32 P_index = (Timeline.Head + j) & Timeline.MaxIndex;
+				FTimePoint& Point = Points[P_index];
+				// 相同颜色的节点会被融合
+				if (Point.PointColor == PrevColor)
+				{
+					LineX_Right += PerPointWidth;
+				}
+				else
+				{
+					FLinearColor DrawColor = PrevColor;
+					DrawColor.A = Opacity;
+					DrawLine_Translucent_2D(Context.Canvas, FVector2D(LineX_Left, LineY), FVector2D(LineX_Right - LineX_Left, PerLineHeight), DrawColor);
+
+					PrevColor = Point.PointColor;
+					LineX_Right += PerPointWidth;
+					LineX_Left = LineX_Right;
+				}
+
+				if (j == (Timeline.Num - 1) && FMath::Abs(LineX_Right - LineX_Left) > FLOAT_NORMAL_THRESH)
+				{
+					FLinearColor DrawColor = PrevColor;
+					DrawColor.A = Opacity;
+					DrawLine_Translucent_2D(Context.Canvas, FVector2D(LineX_Left, LineY), FVector2D(LineX_Right - LineX_Left, PerLineHeight), DrawColor);
+
+					PrevColor = Point.PointColor;
+				}
+			}
+		}
+
+		Opacity *= 0.7f;
+		LineY += (PerLineHeight + LineSpace);
+	}
+
+	Context.YPos += TimelineSize.Y;
+
+	Context.Canvas->SetDrawColor(FColor::Black);
+	// 标题
+	if (!TimelineTitle.IsEmpty())
+	{
+		Context.YPos += 3.f;
+		Context.YPos += Context.Canvas->DrawText(Font, TimelineTitle, TimelinePivotX, Context.YPos, 1.f, 1.f);
+	}
+
+	Context.Canvas->SetDrawColor(PrevFontColor);
+}
+
+void FCFrameSimpleDebugMultiTimeline::Push(const FTimePoint& NewPoint)
+{
+	int32 LastIndex = (Head + Num - 1) & MaxIndex;
+
+	FTimelineItem* CurTimeline = &TimelineItems[LastIndex];
+
+	// 检查是否要创建新的时间线
+	FTimePoint* LastPoint = CurTimeline->GetLastPoint();
+	if (LastPoint && LastPoint->Value > NewPoint.Value)
+	{
+		if (Num <= MaxIndex)
+		{
+			++Num;
+		}
+		else
+		{
+			Head = (Head + 1) & MaxIndex;
+		}
+
+		int32 NewIndex = (Head + Num - 1) & MaxIndex;
+
+		CurTimeline = &TimelineItems[NewIndex];
+		CurTimeline->Reset();
+	}
+
+	CurTimeline->Push(NewPoint);
 }

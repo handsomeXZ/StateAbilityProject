@@ -3,15 +3,16 @@
 #include "Components/CapsuleComponent.h"
 #include "MoveLibrary/FloorQueryUtils.h"
 
+#include "Component/CFrameMoverComponent.h"
 #include "Component/Mover/CFrameProposedMove.h"
 #include "Component/Mover/MoveLibrary/CFrameMovementUtils.h"
+#include "Component/Mover/MoveLibrary/CFrameFloorQueryUtils.h"
+
 
 DEFINE_LOG_CATEGORY_STATIC(LogCFrameGroundMove, Log, All)
 
-void FCFrameGroundMoveUtils::ComputeControlledGroundMove(const FCFrameGroundMoveParams& InParams, FCFrameProposedMove& OutMove)
+void FCFrameGroundMoveUtils::ComputeControlledGroundMove(const FCFrameGroundMoveParams& InParams, OUT FCFrameProposedMove& OutProposedMove)
 {
-	const FVector MoveDirIntent = FCFrameMovementUtils::ComputeDirectionIntent(InParams.MoveInput, InParams.MoveInputType);
-
 	const FPlane GroundSurfacePlane(FVector::ZeroVector, InParams.GroundNormal);
 
 	FCFrameComputeVelocityParams ComputeVelocityParams;
@@ -25,11 +26,11 @@ void FCFrameGroundMoveUtils::ComputeControlledGroundMove(const FCFrameGroundMove
 	ComputeVelocityParams.Friction = InParams.Friction;
 
 	// Figure out linear velocity
-	OutMove.MovePlaneVelocity = FCFrameMovementUtils::ComputeVelocity(ComputeVelocityParams);
-	OutMove.LinearVelocity = FCFrameMovementUtils::ConstrainToPlane(OutMove.MovePlaneVelocity, GroundSurfacePlane, true);
+	OutProposedMove.MovePlaneVelocity = FCFrameMovementUtils::ComputeVelocity(ComputeVelocityParams);
+	OutProposedMove.LinearVelocity = FCFrameMovementUtils::ConstrainToPlane(OutProposedMove.MovePlaneVelocity, GroundSurfacePlane, true);
 
 	// Linearly rotate in place
-	OutMove.AngularVelocity = FCFrameMovementUtils::ComputeAngularVelocity(InParams.PriorOrientation, InParams.OrientationIntent, InParams.DeltaSeconds, InParams.TurningRate);
+	OutProposedMove.AngularVelocity = FCFrameMovementUtils::ComputeAngularVelocity(InParams.PriorOrientation, InParams.OrientationIntent, InParams.DeltaSeconds, InParams.TurningRate);
 
 }
 

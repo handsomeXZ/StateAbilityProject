@@ -21,6 +21,7 @@ public:
 
 	virtual void Init(UCFrameMoverComponent* InMoverComp);
 	virtual void SetMovementBase(UPrimitiveComponent* Base, FName BaseBone);
+
 	virtual void BeginMoveFrame(float DeltaTime, uint32 RCF, uint32 ICF);
 	virtual void UpdateMoveFrame();
 	virtual void EndMoveFrame(float DeltaTime, uint32 RCF, uint32 ICF);
@@ -46,6 +47,10 @@ public:
 	virtual FName GetMovementBaseBoneName() const { return MovementBaseBoneName; }
 	virtual FVector GetMovementBasePos() const { return MovementBasePos; }
 	virtual FQuat GetMovementBaseQuat() const { return MovementBaseQuat; }
+
+
+	void SetLastFrameLocation(FVector OverrideLocation);
+	void SetLastFrameVelocity(FVector OverrideVelocity, float DeltaTime);
 
 protected:
 	UPROPERTY(Transient)

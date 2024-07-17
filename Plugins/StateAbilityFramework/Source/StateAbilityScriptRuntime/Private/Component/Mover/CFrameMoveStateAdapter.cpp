@@ -61,7 +61,6 @@ void UCFrameMoveStateAdapter::UpdateMoveFrame()
 
 void UCFrameMoveStateAdapter::EndMoveFrame(float DeltaTime, uint32 RCF, uint32 ICF)
 {
-	
 
 #if WITH_EDITOR
 	FColor NetColor;
@@ -114,6 +113,18 @@ FRotator UCFrameMoveStateAdapter::GetOrientation_WorldSpace() const
 	}
 
 	return GetOrientation_BaseSpace(); // if no base, assumed to be in world space
+}
+
+void UCFrameMoveStateAdapter::SetLastFrameLocation(FVector OverrideLocation)
+{
+	LastFrameLocation = OverrideLocation;
+}
+
+void UCFrameMoveStateAdapter::SetLastFrameVelocity(FVector OverrideVelocity, float DeltaTime)
+{
+	// 根据速度反推上一帧的位置
+	LastFrameMoveDelta = OverrideVelocity * DeltaTime;
+	LastFrameLocation = GetLocation_WorldSpace() - LastFrameMoveDelta;
 }
 
 //////////////////////////////////////////////////////////////////////////

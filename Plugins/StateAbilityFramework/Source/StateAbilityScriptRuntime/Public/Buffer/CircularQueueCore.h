@@ -196,7 +196,7 @@ public:
 	FORCEINLINE void Empty()
 	{
 		// 置空，但不会修改其他已有的内容
-		HeadFrame = EndFrame - 1;
+		HeadFrame = EndFrame ? (EndFrame - 1) : 0;
 		EndFrame = HeadFrame;
 
 		HeadIndex = 0;
@@ -262,7 +262,7 @@ public:
 
 	//////////////////////////////////////////////////////////////////////////
 	// WRITE
-	void RecordItemData(const OwnerShipDataType& Owner, const ItemDataType& ItemData, const uint32 InsertFrame)
+	bool RecordItemData(const OwnerShipDataType& Owner, const ItemDataType& ItemData, const uint32 InsertFrame)
 	{
 		CheckInvariants();
 
@@ -271,7 +271,7 @@ public:
 		// 无效数据
 		if (InsertFrame < HeadFrame)
 		{
-			return;
+			return false;
 		}
 
 		if (InsertFrame < EndFrame)
@@ -281,6 +281,11 @@ public:
 			{
 				Buffer[Index].AddItem(Owner, ItemData);
 				++(Counter.FindOrAdd(Owner));
+			}
+			else
+			{
+				// 不能覆盖存在的有效数据
+				return false;
 			}
 		}
 		else
@@ -298,6 +303,9 @@ public:
 
 				EndFrame = InsertFrame + 1;
 				HeadFrame = InsertFrame - MaxFramesNum + 1;
+
+				// @TODO: 目前临时靠这种方法来判断是否有异常
+				check(HeadFrame < MAX_uint32 / 2);
 			}
 			else
 			{
@@ -306,6 +314,9 @@ public:
 				EndFrame = InsertFrame + 1;
 			}
 		}
+
+		return true;
+
 	}
 
 	// 申请未初始化的空间并返回
@@ -344,6 +355,9 @@ public:
 
 				EndFrame = InsertFrame + 1;
 				HeadFrame = InsertFrame - MaxFramesNum + 1;
+
+				// @TODO: 目前临时靠这种方法来判断是否有异常
+				check(HeadFrame < MAX_uint32 / 2);
 			}
 			else
 			{

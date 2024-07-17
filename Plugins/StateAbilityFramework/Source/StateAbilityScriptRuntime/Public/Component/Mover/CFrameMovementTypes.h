@@ -26,6 +26,8 @@ public:
 	FName FromMode;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FName ToMode;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	int32 Priority;
 };
 
 USTRUCT(BlueprintType)

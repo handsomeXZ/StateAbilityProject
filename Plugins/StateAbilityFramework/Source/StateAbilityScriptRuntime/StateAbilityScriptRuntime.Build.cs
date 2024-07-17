@@ -41,7 +41,8 @@ public class StateAbilityScriptRuntime : ModuleRules
 				"Slate",
 				"SlateCore",
 				// ... add private dependencies that you statically link with here ...	
-				"CoreOnline",
+				"RenderCore",
+                "CoreOnline",
                 "StructUtils",
                 "NetCore",
 

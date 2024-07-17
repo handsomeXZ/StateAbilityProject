@@ -4,6 +4,10 @@
 #include "GameFramework/PlayerState.h"
 #include "CommandFrameManager.h"
 
+#if WITH_EDITOR
+#include "Debug/DebugUtils.h"
+#endif
+
 DEFINE_LOG_CATEGORY_STATIC(LogCommandFrameNetChannel, Log, Verbose)
 
 PRIVATE_DEFINE_NAMESPACE(ADefaultCommandFrameNetChannel, FBitReader, Pos)
@@ -96,15 +100,24 @@ void ADefaultCommandFrameNetChannel::BeginPlay()
 		check(CFrameManager);
 		CFrameManager->RegisterClientChannel(this);
 
-		CFrameManager->OnEndFrame.AddUObject(this, &ADefaultCommandFrameNetChannel::FixedTick);
+		CFrameManager->OnPreEndFrame.AddUObject(this, &ADefaultCommandFrameNetChannel::FixedTick);
 	}
+}
+
+void ADefaultCommandFrameNetChannel::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	CFrameManager->OnPreEndFrame.RemoveAll(this);
 }
 
 void ADefaultCommandFrameNetChannel::FixedTick(float DeltaTime, uint32 RCF, uint32 ICF)
 {
-	VerifyUnorderedPackets();
+	// 等待回滚结束才能继续处理有序的DeltaPackets数据
+	if (!CFrameManager->IsInRewinding())
+	{
+		VerifyUnorderedPackets();
 
-	ShrinkUnorderedPackets();
+		ShrinkUnorderedPackets();
+	}
 }
 
 void ADefaultCommandFrameNetChannel::ClientSend_CommandFrameInputNetPacket(FCommandFrameInputNetPacket& InputNetPacket)
@@ -242,7 +255,7 @@ void ADefaultCommandFrameNetChannel::ProcessDeltaPrefix(const FCommandFrameDelta
 	PRIVATE_GET_NAMESPACE(ADefaultCommandFrameNetChannel, &NetBitReader, Pos) = 0;
 }
 
-void ADefaultCommandFrameNetChannel::ProcessDeltaPackaged(const FCommandFrameDeltaNetPacket& DeltaNetPacket, FNetBitReader& NetBitReader)
+void ADefaultCommandFrameNetChannel::ProcessDeltaPackaged(FCommandFrameDeltaNetPacket& DeltaNetPacket, FNetBitReader& NetBitReader)
 {
 	UE_LOG(LogCommandFrameNetChannel, Verbose, TEXT("Change LocalLast From[%d] To[%d]"), LastServerCommandFrame, DeltaNetPacket.ServerCommandFrame);
 	LastServerCommandFrame = DeltaNetPacket.ServerCommandFrame;
@@ -259,7 +272,7 @@ void ADefaultCommandFrameNetChannel::ProcessDeltaPackaged(const FCommandFrameDel
 	DeltaNetPacketUtils::SerializeDeltaPrefix(DeltaNetPacket, NetBitReader, NetBitReader.PackageMap, bOutSuccess, [&OutPrefixDataSize](int32 PrefixDataSize, uint32 ServerCommandBufferNum, bool bFault) {
 		OutPrefixDataSize = PrefixDataSize;
 	});
-	PRIVATE_GET_NAMESPACE(ADefaultCommandFrameNetChannel, &NetBitReader, Pos) = OutPrefixDataSize;
+	//PRIVATE_GET_NAMESPACE(ADefaultCommandFrameNetChannel, &NetBitReader, Pos) = OutPrefixDataSize;
 
 	DeltaNetPacketUtils::SerializeDeltaPackaged(DeltaNetPacket, NetBitReader, NetBitReader.PackageMap, bOutSuccess);
 	if (NetChannelState == ECommandFrameNetChannelState::WaitRewind)
@@ -273,6 +286,8 @@ void ADefaultCommandFrameNetChannel::ProcessDeltaPackaged(const FCommandFrameDel
 				NetProcedure->OnClientRewind();
 			}
 		}
+
+		CFrameManager->ReplayFrames(DeltaNetPacket.ServerCommandFrame);
 	}
 
 	NetChannelState = ECommandFrameNetChannelState::Normal;

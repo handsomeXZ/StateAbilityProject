@@ -62,14 +62,26 @@ void FTimeMagAverager::Push(float value)
 
 }
 
+void FTimeDilationHelper::Update(UWorld* WorldContext, bool bFault)
+{
+	if (bFault)
+	{
+		TimeDilationAdaptStage = ETimeDilationAdaptStage::Dilate;
+		AdjustClientTimeDilation(WorldContext, TargetTimeDilation + TimeDilationMag);
+
+		AccumulatedStableSeconds = 0.0f;
+
+		TimeMagAverager.Reset(10);
+	}
+}
+
 void FTimeDilationHelper::Update(UWorld* WorldContext, uint32 ServerInputBufferNum, bool bFault)
 {
 	LastServerCommandBufferNum = ServerInputBufferNum;
 
-	if (TimeDilationAdaptStage == ETimeDilationAdaptStage::Default && (ServerInputBufferNum == 0 || bFault))
+	if (ServerInputBufferNum == 0 || bFault)
 	{
 		UE_LOG(LogTimeDilationHelper, Log, TEXT("ServerInputBufferNum[%d] bFault[%s]"), ServerInputBufferNum, bFault ? TEXT("true") : TEXT("false"));
-
 
 		TimeDilationAdaptStage = ETimeDilationAdaptStage::Dilate;
 		AdjustClientTimeDilation(WorldContext, TargetTimeDilation + TimeDilationMag);
@@ -122,14 +134,27 @@ void FTimeDilationHelper::FixedTick(UWorld* WorldContext, float DeltaTime)
 #if WITH_EDITOR
 	if (WorldContext->GetNetMode() == NM_Client)
 	{
+		static FVector2f DefaultScale = FVector2f(1.f, 1.f);
+		static FColor DefaultColor = FColor::Black;
+		static FText Title = LOCTEXT("DebugTittle", "TimeDilationHelper");
+		static FVector2f TitleScale = FVector2f(1.5f, 1.5f);
+
 		if (!DebugProxy_StateText.IsValid())
 		{
-			DebugProxy_StateText = FCFrameSimpleDebugText::CreateDebugProxy(FName(TEXT("TimeDilationHelper")), LOCTEXT("Debug", "State[Unkown]"), 20, FVector2f(1.0f, 1.0f), FColor::Green);
+			TArray<FCFrameSimpleDebugText::FDebugTextItem> TextItems;
+			TextItems.Emplace(LOCTEXT("Debug", "State[Unkown]"), DefaultScale, DefaultColor);
+			DebugProxy_StateText = FCFrameSimpleDebugText::CreateDebugProxy(FName(TEXT("TimeDilationHelper")), TextItems, 20);
 		}
 
 		const UEnum* Enum = StaticEnum<ETimeDilationAdaptStage>();
 		//UE_LOG(LogTimeDilationHelper, Log, TEXT("LocalPing[%f] LastServerCommandBufferNum[%f] State[%s]"), LocalPing, LastServerCommandBufferNum, *(Enum->GetNameStringByValue((int64)TimeDilationAdaptStage)));
-		DebugProxy_StateText->UpdateText(FText::FromString(FString::Printf(TEXT("State[%s]"), *(Enum->GetNameStringByValue((int64)TimeDilationAdaptStage)))));
+		TArray<FCFrameSimpleDebugText::FDebugTextItem> TextItems;
+		TextItems.Emplace(Title, TitleScale, DefaultColor);
+		TextItems.Emplace(FText::FromString(FString::Printf(TEXT("State[%s]"), *(Enum->GetNameStringByValue((int64)TimeDilationAdaptStage)))), DefaultScale, DefaultColor);
+		TextItems.Emplace(FText::FromString(FString::Printf(TEXT("Pings: %f"), LocalPing)), DefaultScale, DefaultColor);
+		TextItems.Emplace(FText::FromString(FString::Printf(TEXT("预估 ServerCommandBuffer Num: %f"), LastServerCommandBufferNum)), DefaultScale, DefaultColor);
+		
+		DebugProxy_StateText->UpdateText(TextItems);
 	}
 #endif
 
@@ -139,9 +164,15 @@ void FTimeDilationHelper::FixedTick(UWorld* WorldContext, float DeltaTime)
 	{
 		if (LastServerCommandBufferNum <= FLOAT_NORMAL_THRESH)
 		{
-			// We predict it will reach Max and wait to see if it is stable.
+			// 从稳定状态升为膨胀状态（缓冲区的膨胀）
 			TimeDilationAdaptStage = ETimeDilationAdaptStage::Dilate;
 			AdjustClientTimeDilation(WorldContext, TargetTimeDilation + TimeDilationMag);
+		}
+		else if (LastServerCommandBufferNum > MinCommandBufferNum)
+		{
+			// 从稳定状态退位收缩状态（缓冲区的收缩）
+			TimeDilationAdaptStage = ETimeDilationAdaptStage::Shrink;
+			AdjustClientTimeDilation(WorldContext, TargetTimeDilation - TimeDilationMag);
 		}
 
 		break;

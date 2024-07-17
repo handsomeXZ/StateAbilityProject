@@ -15,6 +15,7 @@
 class UCFrameMoveStateAdapter;
 class UCFrameMoverComponent;
 class UCommandFrameManager;
+class UCFrameMovementMode;
 
 namespace CFrameContextDataKey
 {
@@ -47,12 +48,19 @@ struct FCFrameMovementContext
 	uint32 RCF;
 	uint32 ICF;
 
-	UCFrameMoverComponent* MoverComp;
-	USceneComponent* UpdatedComponent;
-	UPrimitiveComponent* UpdatedPrimitive;
-	UCFrameMoveStateAdapter* MoveStateAdapter;
+	UPROPERTY()
+	TObjectPtr<UCFrameMoverComponent> MoverComp;
+	UPROPERTY()
+	TObjectPtr<USceneComponent> UpdatedComponent;
+	UPROPERTY()
+	TObjectPtr<UPrimitiveComponent> UpdatedPrimitive;
+	UPROPERTY()
+	TObjectPtr<UCFrameMoveStateAdapter> MoveStateAdapter;
 
-	UCommandFrameManager* CFrameManager;
+	UPROPERTY()
+	TObjectPtr<UCommandFrameManager> CFrameManager;
+	UPROPERTY()
+	TObjectPtr<UCFrameMovementMode> CurrentMode;
 
 	FCFrameProposedMove CombinedMove;
 

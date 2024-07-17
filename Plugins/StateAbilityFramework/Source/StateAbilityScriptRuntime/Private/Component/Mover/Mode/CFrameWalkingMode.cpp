@@ -1,5 +1,6 @@
 #include "Component/Mover/Mode/CFrameWalkingMode.h"
 
+#include "EnhancedInputComponent.h"
 #include "InputActionValue.h"
 #include "InputAction.h"
 
@@ -13,14 +14,45 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogCFrameWalkingMode, Log, All)
 
-void UCFrameWalkingMode::OnRegistered(FName InModeName)
+UCFrameWalkingMode::UCFrameWalkingMode(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
 {
-	Super::OnRegistered(InModeName);
+
 }
 
-void UCFrameWalkingMode::OnUnregistered()
+void UCFrameWalkingMode::OnActivated()
 {
-	Super::OnUnregistered();
+	Super::OnActivated();
+
+	check(IsValid(InputComponent));
+
+	if (UCommandEnhancedInputComponent* CFrameInputComp = Cast<UCommandEnhancedInputComponent>(InputComponent))
+	{
+		MoveTriggeredHandle = CFrameInputComp->BindCommandInput(IA_Move, ETriggerEvent::Triggered, this, &UCFrameWalkingMode::OnMoveTriggered).GetHandle();
+		MoveCompletedHandle = CFrameInputComp->BindCommandInput(IA_Move, ETriggerEvent::Completed, this, &UCFrameWalkingMode::OnMoveCompleted).GetHandle();
+	}
+	else if (UEnhancedInputComponent* InputComp = Cast<UEnhancedInputComponent>(InputComponent))
+	{
+		MoveTriggeredHandle = InputComp->BindAction(IA_Move, ETriggerEvent::Triggered, this, &UCFrameWalkingMode::OnMoveTriggered).GetHandle();
+		MoveCompletedHandle = InputComp->BindAction(IA_Move, ETriggerEvent::Completed, this, &UCFrameWalkingMode::OnMoveCompleted).GetHandle();
+	}
+}
+
+void UCFrameWalkingMode::OnDeactivated()
+{
+	Super::OnDeactivated();
+
+
+	if (UCommandEnhancedInputComponent* CFrameInputComp = Cast<UCommandEnhancedInputComponent>(InputComponent))
+	{
+		CFrameInputComp->RemoveCommandInputByHandle(MoveTriggeredHandle);
+		CFrameInputComp->RemoveCommandInputByHandle(MoveCompletedHandle);
+	}
+	else if (UEnhancedInputComponent* InputComp = Cast<UEnhancedInputComponent>(InputComponent))
+	{
+		InputComp->RemoveBindingByHandle(MoveTriggeredHandle);
+		InputComp->RemoveBindingByHandle(MoveCompletedHandle);
+	}
 }
 
 void UCFrameWalkingMode::GenerateMove(FCFrameMovementContext& Context, FCFrameProposedMove& OutProposedMove)
@@ -30,60 +62,17 @@ void UCFrameWalkingMode::GenerateMove(FCFrameMovementContext& Context, FCFramePr
 	UPrimitiveComponent* MovementBase = MoveStateAdapter->GetMovementBase();
 	FName MovementBaseBoneName = MoveStateAdapter->GetMovementBaseBoneName();
 
+	//////////////////////////////////////////////////////////////////////////
 	FVector FrameInputVector = ConsumeControlInputVector();
-
-	//////////////////////////////////////////////////////////////////////////
-	// OrientationIntent
-
-	static float RotationMagMin(1e-3);
-	const bool bHasAffirmativeMoveInput = (FrameInputVector.Size() >= RotationMagMin);
-
-	// Figure out intended orientation
 	FVector OrientationIntent = FVector::ZeroVector;
-	if (MoveInputType == ECFrameMoveInputType::DirectionalIntent && bHasAffirmativeMoveInput)
-	{
-		if (bOrientRotationToMovement)
-		{
-			// set the intent to the actors movement direction
-			OrientationIntent = FrameInputVector;
-		}
-		else
-		{
-			// set intent to the the control rotation - often a player's camera rotation
-			OrientationIntent = MoveStateAdapter->GetControlRotation().Vector();
-		}
-
-		LastAffirmativeMoveInput = FrameInputVector;
-
-	}
-	else if (bMaintainLastInputOrientation)
-	{
-		// 没有移动intent，所以使用最后已知的 affirmative move input
-		OrientationIntent = LastAffirmativeMoveInput;
-	}
-
-	if (bShouldRemainVertical)
-	{
-		// 如果角色应该保持垂直，则取消任何 z intent
-		OrientationIntent = OrientationIntent.GetSafeNormal2D();
-	}
-
-	//////////////////////////////////////////////////////////////////////////
-
-	if (bUseBaseRelativeMovement)
-	{
-		FVector RelativeMoveInput, RelativeOrientDir;
-
-		FCFrameBasedMoveUtils::TransformWorldDirectionToBased(MovementBase, MovementBaseBoneName, FrameInputVector, RelativeMoveInput);
-		FCFrameBasedMoveUtils::TransformWorldDirectionToBased(MovementBase, MovementBaseBoneName, OrientationIntent, RelativeOrientDir);
-
-		FrameInputVector = RelativeMoveInput;
-		OrientationIntent = RelativeOrientDir;
-	}
-
-	//////////////////////////////////////////////////////////////////////////
-	FFloorCheckResult LastFloorResult;
+	FRotator IntendedOrientation_WorldSpace = FRotator::ZeroRotator;
 	FVector MovementNormal;
+
+	CFrameMovementModeUtils::CalculateControlInput(OUT FrameInputVector, OUT OrientationIntent, Context, MoveInputType, LastAffirmativeMoveInput,
+		bOrientRotationToMovement, bMaintainLastInputOrientation, bShouldRemainVertical, bUseBaseRelativeMovement);
+
+
+	FFloorCheckResult LastFloorResult;
 	if (Context.GetPersistentData(CFrameContextDataKey::LastFloorResult, LastFloorResult) && LastFloorResult.IsWalkableFloor())
 	{
 		MovementNormal = LastFloorResult.HitResult.ImpactNormal;
@@ -93,15 +82,12 @@ void UCFrameWalkingMode::GenerateMove(FCFrameMovementContext& Context, FCFramePr
 		MovementNormal = MoverComp->GetUpDirection();
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-
-	FRotator IntendedOrientation_WorldSpace;
 	// 如果输入没有intent改变orientation，使用当前的Orientation
-	if (FrameInputVector.IsNearlyZero() || OrientationIntent.IsNearlyZero())
+	if (ControlInputVector.IsNearlyZero() || OrientationIntent.IsNearlyZero())
 	{
 		IntendedOrientation_WorldSpace = MoveStateAdapter->GetOrientation_WorldSpace();
 	}
-	else if(bUseBaseRelativeMovement && MovementBase)
+	else if (bUseBaseRelativeMovement && MovementBase)
 	{
 		FVector OrientIntentDirWorldSpace;
 		FCFrameBasedMoveUtils::TransformBasedDirectionToWorld(MovementBase, MovementBaseBoneName, OrientationIntent, OrientIntentDirWorldSpace);
@@ -111,8 +97,6 @@ void UCFrameWalkingMode::GenerateMove(FCFrameMovementContext& Context, FCFramePr
 	{
 		IntendedOrientation_WorldSpace = OrientationIntent.ToOrientationRotator();
 	}
-
-
 	//////////////////////////////////////////////////////////////////////////
 
 
@@ -170,7 +154,9 @@ void UCFrameWalkingMode::Execute(FCFrameMovementContext& Context)
 	USceneComponent* UpdatedComponent = Context.UpdatedComponent;
 	UPrimitiveComponent* UpdatedPrimitive = Context.UpdatedPrimitive;
 	UCFrameMoveStateAdapter* MoveStateAdapter = Context.MoveStateAdapter;
-	FCFrameProposedMove ProposedMove = Context.CombinedMove;
+	FCFrameProposedMove& ProposedMove = Context.CombinedMove;
+
+	bIsOnWalkableFloor = true;
 
 	if (ProposedMove.LinearVelocity.IsNearlyZero() && ProposedMove.AngularVelocity.IsNearlyZero())
 	{
@@ -303,6 +289,8 @@ void UCFrameWalkingMode::Execute(FCFrameMovementContext& Context)
 		{
 			// No floor or not walkable, so let's let the airborne movement mode deal with it
 			CaptureFinalState(Context, bDidAttemptMovement, CurrentFloor);
+
+			bIsOnWalkableFloor = false;
 			return;
 		}
 	}
@@ -331,28 +319,20 @@ void UCFrameWalkingMode::Execute(FCFrameMovementContext& Context)
 		{
 			// No floor or not walkable, so let's let the airborne movement mode deal with it
 			CaptureFinalState(Context, bDidAttemptMovement, CurrentFloor);
+
+			bIsOnWalkableFloor = false;
 			return;
 		}
 	}
 
 	CaptureFinalState(Context, bDidAttemptMovement, CurrentFloor);
-
+	bIsOnWalkableFloor = true;
 }
 
-void UCFrameWalkingMode::SetupInputComponent(UInputComponent* InInputComponent)
+void UCFrameWalkingMode::OnClientRewind()
 {
-	Super::SetupInputComponent(InInputComponent);
-
-	if (UCommandEnhancedInputComponent* CFrameInputComp = Cast<UCommandEnhancedInputComponent>(InInputComponent))
-	{
-		CFrameInputComp->BindCommandInput(IA_Move, ETriggerEvent::Triggered, this, &UCFrameWalkingMode::OnMoveTriggered);
-		CFrameInputComp->BindCommandInput(IA_Move, ETriggerEvent::Completed, this, &UCFrameWalkingMode::OnMoveCompleted);
-	}
-	else if (UEnhancedInputComponent* InputComp = Cast<UEnhancedInputComponent>(InInputComponent))
-	{
-		InputComp->BindAction(IA_Move, ETriggerEvent::Triggered, this, &UCFrameWalkingMode::OnMoveTriggered);
-		InputComp->BindAction(IA_Move, ETriggerEvent::Completed, this, &UCFrameWalkingMode::OnMoveCompleted);
-	}
+	// 回滚时，需要清理上一帧的缓存数据
+	ControlInputVector = FVector::ZeroVector;
 }
 
 void UCFrameWalkingMode::OnMoveTriggered(const FInputActionValue& Value)
@@ -379,7 +359,7 @@ void UCFrameWalkingMode::OnMoveCompleted(const FInputActionValue& Value)
 	ControlInputVector = FVector::ZeroVector;
 }
 
-void UCFrameWalkingMode::CaptureFinalState(FCFrameMovementContext& Context, bool bDidAttemptMovement, const FFloorCheckResult& FloorResult)
+void UCFrameWalkingMode::CaptureFinalState(FCFrameMovementContext& Context, bool bDidAttemptMovement, const FFloorCheckResult& FloorResult) const
 {
 	Context.MoveStateAdapter->UpdateMoveFrame();
 
@@ -396,7 +376,6 @@ void UCFrameWalkingMode::CaptureFinalState(FCFrameMovementContext& Context, bool
 		CurrentBaseInfo.ContactLocalPosition = PriorBaseInfo.ContactLocalPosition;
 	}
 
-	// TODO: Update Main/large movement record with substeps from our local record
 
 	if (CurrentBaseInfo.HasRelativeInfo())
 	{

@@ -48,7 +48,21 @@
 #define DEBUG_UNREGISTER(Obj)
 #endif
 
+struct FCFDebugChartPoint
+{
+	enum EPointValueType : uint8
+	{
+		Int,
+		Float,
+	};
 
+	FCFDebugChartPoint() {}
+	FCFDebugChartPoint(FVector2D InValue) : Value(InValue) {}
+
+	FVector2D Value;
+	FColor PointColor = FColor::Green;
+	EPointValueType ValueType = EPointValueType::Int;
+};
 
 class FCFDebugHelper
 {
@@ -88,7 +102,8 @@ public:
 	};
 	void ShowDebugInfo(class AHUD* HUD, class UCanvas* Canvas, const class FDebugDisplayInfo& DisplayInfo, float& YL, float& YPos);
 	void DrawDebugString_2D(FDebug2DContext& Context, const FText& InText, float X, FVector2f Scale, FColor Color, UFont* InFont = nullptr);
-	void DrawDebugChart_2D(FDebug2DContext& Context, FText Title, TArray<FVector2D>& Points, FVector2D YRange, float PivotX, FVector2f Size, FColor Color, bool bIntValueText = false, UFont* InFont = nullptr);
+	void DrawDebugChart_2D(FDebug2DContext& Context, FText Title, TArray<FCFDebugChartPoint>& Points, FVector2D ChartY_ValueRange, float ChartPivotX, FVector2f ChartSize, UFont* InFont = nullptr);
+
 
 	void RegisterExternalDebug(FName DebugName, UObject* obj, TFunction<void(FDebug2DContext& Context)> func)
 	{
@@ -130,41 +145,96 @@ struct FCFrameDebugProxyBase : public TSharedFromThis<FCFrameDebugProxyBase>
 
 struct FCFrameSimpleDebugText : public FCFrameDebugProxyBase
 {
-	FCFrameSimpleDebugText(FText InInitText, float PivotX, FVector2f Scale, FColor Color);
+	struct FDebugTextItem
+	{
+		FDebugTextItem() {}
+		FDebugTextItem(const FText& InText) : Text(InText) {}
+		FDebugTextItem(const FText& InText, FVector2f InTextScale, FColor InTextColor) : Text(InText), TextScale(InTextScale), TextColor(InTextColor) {}
 
-	static TSharedPtr<FCFrameSimpleDebugText> CreateDebugProxy(FName DebugName, FText InInitText, float PivotX, FVector2f Scale, FColor Color);
+		FText Text;
+		FVector2f TextScale = FVector2f(1.f, 1.f);
+		FColor TextColor = FColor::White;
+	};
+
+	FCFrameSimpleDebugText(TArray<FDebugTextItem>& InInitTexts, float PivotX);
+	static TSharedPtr<FCFrameSimpleDebugText> CreateDebugProxy(FName DebugName, TArray<FDebugTextItem>& InInitTexts, float PivotX);
+
 
 	virtual void ShowDebug(FCFDebugHelper::FDebug2DContext& Context) override;
-	void UpdateText(FText NewText);
+	void UpdateText(TArray<FDebugTextItem>& NewTextItem);
 protected:
-	FText Text;
+	TArray<FDebugTextItem> TextData;
 	float TextPivotX;
-	FVector2f TextScale;
-	FColor TextColor;
-	
 };
 
 // 利用循环缓冲区实现Chart的数据记录
+// 循环缓冲区要求数量必须为2的幂次
 struct FCFrameSimpleDebugChart : public FCFrameDebugProxyBase
 {
-	FCFrameSimpleDebugChart(FText Title, int32 PointCount, FVector2D YRange, float InChartPivotX, FVector2f InChartSize, FColor InColor, bool InbIntValueText = false);
+	FCFrameSimpleDebugChart(const FText& Title, int32 PointCount, FVector2D InChartY_ValueRange, float InChartPivotX, FVector2f InChartSize);
 
-	static TSharedPtr<FCFrameSimpleDebugChart> CreateDebugProxy(FName DebugName, FText Title, int32 PointCount, FVector2D YRange, float InChartPivotX, FVector2f InChartSize, FColor InColor, bool InbIntValueText = false);
+	static TSharedPtr<FCFrameSimpleDebugChart> CreateDebugProxy(FName DebugName, const FText& Title, int32 PointCount, FVector2D InChartY_ValueRange, float InChartPivotX, FVector2f InChartSize);
 
 	virtual void ShowDebug(FCFDebugHelper::FDebug2DContext& Context) override;
-	void Push(FVector2D NewPoint);
+	void Push(const FCFDebugChartPoint& NewPoint);
 	void Pop();
 
 protected:
 	FText ChartTitle;
 	float ChartPivotX;
 	FVector2f ChartSize;
-	FColor ChartColor;
-	FVector2D ChartYRange;
-	bool bIntValueText;
+	FVector2D ChartY_ValueRange;
 
-	int32 Head = -1;
+	int32 Head = 0;
 	int32 MaxIndex;
 	int32 Num = 0;
-	TArray<FVector2D> Points;
+	TArray<FCFDebugChartPoint> Points;
+};
+
+// 在需要返回到旧的时间点时，会过渡到新的时间线
+// 循环缓冲区要求数量必须为2的幂次
+struct FCFrameSimpleDebugMultiTimeline : public FCFrameDebugProxyBase
+{
+	struct FTimePoint
+	{
+		FTimePoint() {}
+		FTimePoint(double InValue, FColor InPointColor) : Value(InValue), PointColor(InPointColor) {}
+		double Value = 0;
+		FColor PointColor = FColor::White;
+	};
+	struct FTimelineItem
+	{
+		FTimelineItem(int32 InTimePointCount)
+		{
+			Points.SetNum(FMath::RoundUpToPowerOfTwo(InTimePointCount));
+			MaxIndex = Points.Num() - 1;
+		}
+
+		void Push(const FTimePoint& NewPoint);
+		void Reset();
+		FTimePoint* GetLastPoint();
+
+		int32 Head = 0;
+		int32 MaxIndex;
+		int32 Num = 0;
+
+		TArray<FTimePoint> Points;
+	};
+
+	FCFrameSimpleDebugMultiTimeline(const FText& InTitle, int32 InTimePointCount, int32 InTimelineCount, float InPivotX, FVector2f InTimelineSize);
+	static TSharedPtr<FCFrameSimpleDebugMultiTimeline> CreateDebugProxy(FName DebugName, const FText& InTitle, int32 InTimePointCount, int32 InTimelineCount, float InPivotX, FVector2f InTimelineSize);
+
+	virtual void ShowDebug(FCFDebugHelper::FDebug2DContext& Context) override;
+	void Push(const FTimePoint& NewPoint);
+
+protected:
+	FText TimelineTitle;
+	int32 TimePointCount;
+	float TimelinePivotX;
+	FVector2f TimelineSize;
+
+	int32 Head = 0;
+	int32 MaxIndex;
+	int32 Num = 0;
+	TArray<FTimelineItem> TimelineItems;
 };

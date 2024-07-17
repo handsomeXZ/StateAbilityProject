@@ -4,8 +4,12 @@
 
 #include "CoreMinimal.h"
 
+#include "Component/Mover/MoveLibrary/CFrameMovementUtils.h"
 
+class UCFrameMoverComponent;
 struct FCFrameProposedMove;
+struct FOptionalFloorCheckResult;
+struct FFloorCheckResult;
 
 // Input parameters for controlled ground movement function
 struct STATEABILITYSCRIPTRUNTIME_API FCFrameGroundMoveParams
@@ -29,7 +33,7 @@ struct STATEABILITYSCRIPTRUNTIME_API FCFrameGroundMoveParams
 struct STATEABILITYSCRIPTRUNTIME_API FCFrameGroundMoveUtils
 {
 	/** Generate a new movement based on move/orientation intents and the prior state, constrained to the ground movement plane. Also applies deceleration friction as necessary. */
-	static void ComputeControlledGroundMove(const FCFrameGroundMoveParams& InParams, FCFrameProposedMove& OutMove);
+	static void ComputeControlledGroundMove(const FCFrameGroundMoveParams& InParams, OUT FCFrameProposedMove& OutProposedMove);
 
 	/** Used to change a movement to be along a ramp's surface, typically to prevent slow movement when running up/down a ramp */
 	static FVector ComputeDeflectedMoveOntoRamp(const FVector& OrigMoveDelta, const FHitResult& RampHitResult, float MaxWalkSlopeCosine, const bool bHitFromLineTrace);

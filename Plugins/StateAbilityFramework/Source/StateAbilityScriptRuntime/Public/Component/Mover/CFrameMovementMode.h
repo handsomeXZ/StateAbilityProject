@@ -5,10 +5,17 @@
 #include "CoreMinimal.h"
 
 #include "Component/Mover/CFrameProposedMove.h"
+#include "Component/Mover/MoveLibrary/CFrameMovementUtils.h"
 
 #include "CFrameMovementMode.generated.h"
 
 struct FCFrameMovementContext;
+
+namespace CFrameMovementModeUtils
+{
+	void CalculateControlInput(OUT FVector& ControlInputVector, OUT FVector& OrientationIntent, FCFrameMovementContext& Context, ECFrameMoveInputType MoveInputType, FVector LastAffirmativeMoveInput,
+		bool bOrientRotationToMovement, bool bMaintainLastInputOrientation, bool bShouldRemainVertical, bool bUseBaseRelativeMovement);
+}
 
 UCLASS(Abstract, Blueprintable, BlueprintType)
 class UCFrameMovementSetting : public UDataAsset
@@ -109,20 +116,22 @@ class UCFrameMovementSetting : public UDataAsset
 UCLASS(Abstract, Blueprintable, BlueprintType, EditInlineNew)
 class STATEABILITYSCRIPTRUNTIME_API UCFrameMovementMode : public UObject
 {
-	GENERATED_BODY()
+	GENERATED_UCLASS_BODY()
 public:
-	UCFrameMovementMode();
 
 	virtual void OnRegistered(FName InModeName);
 	virtual void OnUnregistered() {}
+	virtual void OnActivated() {}
+	virtual void OnDeactivated() {}
 	virtual void GenerateMove(FCFrameMovementContext& Context, FCFrameProposedMove& OutProposedMove) {}
 	virtual void Execute(FCFrameMovementContext& Context) {}
+	virtual void OnClientRewind() {}
 
 	virtual void SetupInputComponent(UInputComponent* InInputComponent);
 
 	FName GetModeName() const { return ModeName; }
 	class UCFrameMoverComponent* GetMoverComp();
-private:
+protected:
 	UPROPERTY(Transient)
 	FName ModeName;
 

@@ -52,4 +52,6 @@ struct FCommandFrameAttributeSnapshot
 	void Release(uint32 InCommandFrame);
 	bool Verify(uint32 InCommandFrame);
 	bool HasOwnerShip(const UScriptStruct* Key);
+
+	uint8* ReadItemData(const UScriptStruct* Key);
 };

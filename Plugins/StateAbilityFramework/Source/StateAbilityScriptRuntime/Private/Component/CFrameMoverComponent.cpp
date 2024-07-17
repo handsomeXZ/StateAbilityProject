@@ -10,6 +10,8 @@
 #include "Component/Mover/CFrameMoveModeStateMachine.h"
 #include "Component/Mover/CFrameMoveStateAdapter.h"
 
+DEFINE_LOG_CATEGORY_STATIC(LogCFrameMmoverComp, Log, All)
+
 const FVector UCFrameMoverComponent::DefaultGravityAccel = FVector(0.0, 0.0, -980.0);
 const FVector UCFrameMoverComponent::DefaultUpDir = FVector(0.0, 0.0, 1.0);
 
@@ -115,6 +117,30 @@ void UCFrameMoverComponent::BeginPlay()
 	}
 
 	UpdateTickRegistration();
+
+	GetWorld()->GetTimerManager().SetTimerForNextTick(this, &UCFrameMoverComponent::PostBeginPlay);
+}
+
+void UCFrameMoverComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	CFrameManager->UnBindOnFrameNetChannelRegistered(this);
+	CFrameManager->OnEndFrame.RemoveAll(this);
+}
+
+void UCFrameMoverComponent::PostBeginPlay()
+{
+	// 必须得在下一帧尝试绑定，因为在Actor的BeginPlay执行时，可能还未绑定PC。（例如单机、DS模式）
+	CFrameManager->BindOnFrameNetChannelRegistered(this, FOnFrameNetChannelRegistered::CreateUObject(this, &UCFrameMoverComponent::OnFrameNetChannelRegistered));
+
+	CFrameManager->OnEndFrame.AddUObject(this, &UCFrameMoverComponent::FixedTick);
+}
+
+void UCFrameMoverComponent::OnFrameNetChannelRegistered(ACommandFrameNetChannelBase* Channel)
+{
+	if (Channel->GetNetConnection() == GetOwner()->GetNetConnection())
+	{
+		Channel->RegisterNetPacketProcedure(EDeltaNetPacketType::Movement, this);
+	}
 }
 
 void UCFrameMoverComponent::SetUpdatedComponent(USceneComponent* NewUpdatedComponent)
@@ -160,7 +186,6 @@ void UCFrameMoverComponent::UpdateTickRegistration()
 {
 	check(GetCommandFrameManager());
 
-	CFrameManager->OnEndFrame.AddUObject(this, &UCFrameMoverComponent::FixedTick);
 }
 
 UCommandFrameManager* UCFrameMoverComponent::GetCommandFrameManager()
@@ -229,6 +254,8 @@ void UCFrameMoverComponent::OnServerNetSync(FNetProcedureSyncParam& SyncParam)
 		//SerializePackedVector<100, 30>(MovementBasePos, Ar);
 		//MovementBaseQuat.NetSerialize(Ar, Map, bOutSuccess);
 	}
+
+	bOutSuccess = true;
 }
 
 void UCFrameMoverComponent::OnClientNetSync(FNetProcedureSyncParam& SyncParam, bool& bNeedRewind)
@@ -264,26 +291,41 @@ void UCFrameMoverComponent::OnClientNetSync(FNetProcedureSyncParam& SyncParam, b
 		//MovementBaseQuat.NetSerialize(Ar, Map, bOutSuccess);
 	}
 
-	if (CheckClientExceedsAllowablePositionError(Location))
+	if (CheckClientExceedsAllowablePositionError(SyncParam, Location))
 	{
 		if (SyncParam.NetPacket.bLocal)
 		{
-			AdjustClientPosition(Location, Velocity, Orientation, MovementBase, MovementBaseBoneName);
+			AdjustClientPosition(SyncParam, Location, Velocity, Orientation, MovementBase, MovementBaseBoneName);
+
+			UE_LOG(LogCFrameMmoverComp, Log, TEXT("[Client Rewind] ICF[%d] Location[%s]"), SyncParam.NetPacket.ServerCommandFrame, *(Adapter->GetLocation_WorldSpace().ToCompactString()));
+			UE_LOG(LogCFrameMmoverComp, Log, TEXT("[Client Rewind] ICF[%d] ServerVel[%s] LocalVel[%s]"), SyncParam.NetPacket.ServerCommandFrame, *(Velocity.ToCompactString()), *(Adapter->GetVelocity_WorldSpace().ToCompactString()));
+
 			bNeedRewind = true;
 		}
 	}
+
+	bOutSuccess = true;
 }
 
 void UCFrameMoverComponent::OnClientRewind()
 {
-	
+	ModeFSM->OnClientRewind();
 }
 
-bool UCFrameMoverComponent::CheckClientExceedsAllowablePositionError(const FVector& ServerWorldLocation)
+bool UCFrameMoverComponent::CheckClientExceedsAllowablePositionError(FNetProcedureSyncParam& SyncParam, const FVector& ServerWorldLocation)
 {
 	// 参照 UCharacterMovementComponent::ServerExceedsAllowablePositionError
 
-	UCFrameMoveStateAdapter* Adapter = MovementConfig.MoveStateAdapter;
+	if (!GetCommandFrameManager())
+	{
+		return false;
+	}
+	FStructView MovementSnapshotView = CFrameManager->ReadAttributeFromSnapshotBuffer(SyncParam.NetPacket.ServerCommandFrame, FCFrameMovementSnapshot::StaticStruct());
+
+	if (!MovementSnapshotView.IsValid())
+	{
+		return false;
+	}
 
 	// Check for disagreement in movement mode
 	//const uint8 CurrentPackedMovementMode = PackNetworkMovementMode();
@@ -294,7 +336,9 @@ bool UCFrameMoverComponent::CheckClientExceedsAllowablePositionError(const FVect
 	//	return true;
 	//}
 
-	const FVector LocDiff = Adapter->GetLocation_WorldSpace() - ServerWorldLocation;
+	FCFrameMovementSnapshot& MovementSnapshot = MovementSnapshotView.Get<FCFrameMovementSnapshot>();
+
+	const FVector LocDiff = MovementSnapshot.Location - ServerWorldLocation;
 	// 啥玩意？为了读取通用配置？
 	const AGameNetworkManager* GameNetworkManager = (const AGameNetworkManager*)(AGameNetworkManager::StaticClass()->GetDefaultObject());
 	if (GameNetworkManager->ExceedsAllowablePositionError(LocDiff))
@@ -306,10 +350,19 @@ bool UCFrameMoverComponent::CheckClientExceedsAllowablePositionError(const FVect
 
 }
 
-void UCFrameMoverComponent::AdjustClientPosition(FVector WorldLocation, FVector WorldVelocity, FRotator WorldOrientation, UPrimitiveComponent* MovementBase, FName MovementBaseBoneName)
+void UCFrameMoverComponent::AdjustClientPosition(FNetProcedureSyncParam& SyncParam, FVector WorldLocation, FVector WorldVelocity, FRotator WorldOrientation, UPrimitiveComponent* MovementBase, FName MovementBaseBoneName)
 {
 	UpdatedComponent->SetWorldLocationAndRotation(WorldLocation, WorldOrientation);
-	UpdatedComponent->ComponentVelocity = WorldVelocity;
+
+	// 速度覆盖这两个值就够了？
+	// ComponentVelocity仅外部可能会用到，移动组件所用的都是Adapter，且ComponentVelocity的速度更新也由Adapter提供数据。
+	{
+		UpdatedComponent->ComponentVelocity = WorldVelocity;
+
+		// 更新记录的速度
+		MovementConfig.MoveStateAdapter->SetLastFrameVelocity(WorldVelocity, ModeFSM->GetMovementContext().DeltaTime);
+		MovementConfig.MoveStateAdapter->UpdateMoveFrame();
+	}
 
 	MovementConfig.MoveStateAdapter->SetMovementBase(MovementBase, MovementBaseBoneName);
 }

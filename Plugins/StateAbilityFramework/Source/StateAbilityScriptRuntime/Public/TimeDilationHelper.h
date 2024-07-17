@@ -41,6 +41,7 @@ public:
 	const int32 MaxCommandBufferNum;
 	const float FixedFrameRate;
 
+	void Update(UWorld* WorldContext, bool bFault);
 	void Update(UWorld* WorldContext, uint32 ServerCommandBufferNum, bool bFault);
 	void FixedTick(UWorld* WorldContext, float DeltaTime);
 	ETimeDilationAdaptStage GetState() { return TimeDilationAdaptStage; }

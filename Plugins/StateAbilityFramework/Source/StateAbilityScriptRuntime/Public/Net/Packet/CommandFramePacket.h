@@ -67,7 +67,7 @@ namespace DeltaNetPacketUtils
 	void BuildPacket_Fault_FrameExpiry(FCommandFrameDeltaNetPacket& Packet);
 
 	void SerializeDeltaPrefix(const FCommandFrameDeltaNetPacket& NetPacket, FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess, FPrefixCallBackFunc CallBack = FPrefixCallBackFunc());
-	void SerializeDeltaPackaged(const FCommandFrameDeltaNetPacket& NetPacket, FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess);
+	void SerializeDeltaPackaged(FCommandFrameDeltaNetPacket& NetPacket, FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess);
 
 	template<EDeltaNetPacketType Type>
 	void NetSync(const FCommandFrameDeltaNetPacket& NetPacket, FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess);

@@ -37,6 +37,7 @@ class ADefaultCommandFrameNetChannel : public ACommandFrameNetChannelBase
 public:
 	//virtual bool IsNetRelevantFor(const AActor* RealViewer, const AActor* ViewTarget, const FVector& SrcLocation) const override;
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void RewindFrame() { NetChannelState = ECommandFrameNetChannelState::WaitRewind; }
 
 	virtual void FixedTick(float DeltaTime, uint32 RCF, uint32 ICF) override;
@@ -65,7 +66,7 @@ private:
 
 	//////////////////////////////////////////////////////////////////////////
 	// 处理数据包主体（仅处理有序的数据包）
-	void ProcessDeltaPackaged(const FCommandFrameDeltaNetPacket& DeltaNetPacket, FNetBitReader& NetBitReader);
+	void ProcessDeltaPackaged(FCommandFrameDeltaNetPacket& DeltaNetPacket, FNetBitReader& NetBitReader);
 
 	//////////////////////////////////////////////////////////////////////////
 	// 处理乱序包
@@ -89,6 +90,10 @@ private:
 
 
 	//////////////////////////////////////////////////////////////////////////
+
+#if WITH_EDITOR
+	TSharedPtr<struct FCFrameSimpleDebugChart> DebugProxy_NetChannel;
+#endif
 };
 
 namespace DeltaNetPacketUtils
