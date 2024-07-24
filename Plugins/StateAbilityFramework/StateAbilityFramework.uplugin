@@ -18,12 +18,12 @@
 		{
 			"Name": "StateAbilityScriptRuntime",
 			"Type": "Runtime",
-			"LoadingPhase": "PreLoadingScreen"
+			"LoadingPhase": "Default"
 		},
 		{
 			"Name": "StateAbilityScriptEditor",
 			"Type": "Editor",
-			"LoadingPhase": "PreLoadingScreen"
+			"LoadingPhase": "Default"
 		}
 	],
 	"Plugins": [
@@ -33,6 +33,14 @@
 		},
 		{
 			"Name": "EnhancedInput",
+			"Enabled": true
+		},
+		{
+			"Name": "Mover",
+			"Enabled": true
+		},
+		{
+			"Name": "MassEntity",
 			"Enabled": true
 		}
 	]

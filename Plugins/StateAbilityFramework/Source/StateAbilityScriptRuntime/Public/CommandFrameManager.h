@@ -128,7 +128,7 @@ public:
 
 	void SimulateInput(uint32 CommandFrame);
 	// @TODO：轮询开销太大了
-	void BuildInputEventMap(APlayerController* PC, TMap<const UInputAction*, TArray<TUniquePtr<FEnhancedInputActionEventBinding>>>& InputEventMap);
+	void BuildInputEventMap(APlayerController* PC, TMap<const UInputAction*, TArray<TSharedPtr<FEnhancedInputActionEventBinding>>>& InputEventMap);
 
 	TJOwnerShipCircularQueue<FCommandFrameInputFrame, FUniqueNetIdRepl, TArray<FCommandFrameInputAtom>> CommandBuffer;
 
@@ -164,11 +164,11 @@ private:
 	UPROPERTY()
 	TObjectPtr<ACommandFrameNetChannelBase> LocalNetChannel;
 	UPROPERTY()
-	TMap<UNetConnection*, ACommandFrameNetChannelBase*> NetChannels;
+	TMap<AController*, ACommandFrameNetChannelBase*> NetChannels;
 
 	TMap<UObject*, FOnFrameNetChannelRegistered> NetChannelDelegateMap;
 
-	TMap<const FUniqueNetIdRepl, TMap<const UInputAction*, TArray<TUniquePtr<FEnhancedInputActionEventBinding>>>> InputProcedureCache;
+	TMap<const FUniqueNetIdRepl, TMap<const UInputAction*, TArray<TSharedPtr<FEnhancedInputActionEventBinding>>>> InputProcedureCache;
 
 	//////////////////////////////////////////////////////////////////////////
 	// Debug

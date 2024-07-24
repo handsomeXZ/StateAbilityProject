@@ -46,6 +46,8 @@ public class StateAbilityScriptRuntime : ModuleRules
                 "StructUtils",
                 "NetCore",
 
+				// ECS
+				"MassEntity",
 
 				// 临时借用一下Mover内部的类
                 "Mover",

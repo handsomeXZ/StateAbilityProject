@@ -302,6 +302,7 @@ void ADefaultCommandFrameNetChannel::VerifyUnorderedPackets()
 	while (FCommandFrameDeltaNetPacket* PacketPtr = UnorderedPackets.Find(LastServerCommandFrame))
 	{
 		FNetBitReader NetBitReader;
+		NetBitReader.PackageMap = PacketPtr->PackageMap;
 		NetBitReader.SetData((uint8*)PacketPtr->RawData.GetData(), PacketPtr->RawData.Num());
 		ProcessDeltaPackaged(*PacketPtr, NetBitReader);
 	}

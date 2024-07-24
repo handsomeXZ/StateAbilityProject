@@ -29,6 +29,25 @@ const float UCommandFrameManager::FixedFrameRate = 30.0f;
 
 // 统一以秒（s）为时间单位
 
+namespace CFrameUtils
+{
+	AController* GetOwnerIsController(AActor* Actor)
+	{
+		if (AController* Controller = Cast<AController>(Actor))
+		{
+			return Controller;
+		}
+
+		AActor* Owner = Actor->GetOwner();
+		if (!IsValid(Owner))
+		{
+			return nullptr;
+		}
+
+		return GetOwnerIsController(Owner);
+	}
+}
+
 //////////////////////////////////////////////////////////////////////////
 // FCommandFrameTickFunction
 
@@ -536,7 +555,7 @@ void UCommandFrameManager::SimulateInput(uint32 CommandFrame)
 		if (PC)
 		{
 			APlayerState* PS = PC->GetPlayerState<APlayerState>();
-			TMap<const UInputAction*, TArray<TUniquePtr<FEnhancedInputActionEventBinding>>>& InputEventMapRef = InputProcedureCache.FindOrAdd(PS->GetUniqueId());
+			TMap<const UInputAction*, TArray<TSharedPtr<FEnhancedInputActionEventBinding>>>& InputEventMapRef = InputProcedureCache.FindOrAdd(PS->GetUniqueId());
 			BuildInputEventMap(PC, InputEventMapRef);
 		}
 	}
@@ -579,7 +598,7 @@ void UCommandFrameManager::SimulateInput(uint32 CommandFrame)
 	for (auto& Counter : InputFrame->OrderCounter)
 	{
 		const FUniqueNetIdRepl& NetId = Counter.Key;
-		TMap<const UInputAction*, TArray<TUniquePtr<FEnhancedInputActionEventBinding>>>& InputEventMap = InputProcedureCache.FindOrAdd(NetId);
+		TMap<const UInputAction*, TArray<TSharedPtr<FEnhancedInputActionEventBinding>>>& InputEventMap = InputProcedureCache.FindOrAdd(NetId);
 		uint8 Count = Counter.Value;
 
 		if (!Count || InputEventMap.IsEmpty())
@@ -593,16 +612,16 @@ void UCommandFrameManager::SimulateInput(uint32 CommandFrame)
 		while (Count--)
 		{
 			FCommandFrameInputAtom& InputAtom = InputFrame->InputQueue[InputIndex++];
-			TArray<TUniquePtr<FEnhancedInputActionEventBinding>>* InputBindings = InputEventMap.Find(InputAtom.InputAction);
+			TArray<TSharedPtr<FEnhancedInputActionEventBinding>>* InputBindings = InputEventMap.Find(InputAtom.InputAction);
 			if (!InputBindings)
 			{
 				continue;
 			}
 
-			static TArray<TUniquePtr<FEnhancedInputActionEventBinding>> TriggeredDelegates;
+			static TArray<TSharedPtr<FEnhancedInputActionEventBinding>> TriggeredDelegates;
 			TriggeredDelegates.Reset();
 			
-			for (const TUniquePtr<FEnhancedInputActionEventBinding>& Binding : *InputBindings)
+			for (const TSharedPtr<FEnhancedInputActionEventBinding>& Binding : *InputBindings)
 			{
 				const ETriggerEvent BoundTriggerEvent = Binding->GetTriggerEvent();
 				// Raise appropriate delegate to report on event state
@@ -610,13 +629,16 @@ void UCommandFrameManager::SimulateInput(uint32 CommandFrame)
 				{
 					// Record intent to trigger started as well as triggered
 					// EmplaceAt 0 for the "Started" event it is always guaranteed to fire before Triggered
+
+					FCommandFrameInputActionInstance ActionData(InputAtom);
+
 					if (BoundTriggerEvent == ETriggerEvent::Started)
 					{
-						TriggeredDelegates.EmplaceAt(0, Binding->Clone());
+						Binding->Execute(ActionData);
 					}
 					else
 					{
-						TriggeredDelegates.Emplace(Binding->Clone());
+						Binding->Execute(ActionData);
 					}
 
 					// Keep track of the triggered actions this tick so that we can quickly look them up later when determining chorded action state
@@ -626,15 +648,6 @@ void UCommandFrameManager::SimulateInput(uint32 CommandFrame)
 						// TriggeredActionsThisTick.Add(ActionData->GetSourceAction());
 					}
 				}
-			}
-
-			// Action all delegates that triggered this tick, in the order in which they triggered.
-			for (TUniquePtr<FEnhancedInputActionEventBinding>& Delegate : TriggeredDelegates)
-			{
-				TObjectPtr<const UInputAction> DelegateAction = Delegate->GetAction();
-
-				FCommandFrameInputActionInstance ActionData(InputAtom);
-				Delegate->Execute(ActionData);
 			}
 			
 		}
@@ -650,7 +663,7 @@ void UCommandFrameManager::SimulateInput(uint32 CommandFrame)
 	}
 }
 
-void UCommandFrameManager::BuildInputEventMap(APlayerController* PC, TMap<const UInputAction*, TArray<TUniquePtr<FEnhancedInputActionEventBinding>>>& InputEventMap)
+void UCommandFrameManager::BuildInputEventMap(APlayerController* PC, TMap<const UInputAction*, TArray<TSharedPtr<FEnhancedInputActionEventBinding>>>& InputEventMap)
 {
 	static TArray<UInputComponent*> InputStack;
 	InputStack.Reset();
@@ -707,9 +720,9 @@ void UCommandFrameManager::BuildInputEventMap(APlayerController* PC, TMap<const 
 		{
 			for (auto& BindingPair : CEInputComp->GetCommandInputBindings())
 			{
-				const TUniquePtr<FEnhancedInputActionEventBinding>& Binding = BindingPair.Value;
+				const TSharedPtr<FEnhancedInputActionEventBinding>& Binding = BindingPair.Value;
 
-				InputEventMap.FindOrAdd(Binding->GetAction()).Add(Binding->Clone());
+				InputEventMap.FindOrAdd(Binding->GetAction()).Add(Binding);
 			}
 		}
 	}
@@ -740,7 +753,7 @@ void UCommandFrameManager::PostLogin(AGameModeBase* GameMode, APlayerController*
 {
 	if (GetWorld()->GetAuthGameMode() == GameMode)
 	{
-		if (ACommandFrameNetChannelBase** ChannelPtr = NetChannels.Find(PC->GetNetConnection()))
+		if (ACommandFrameNetChannelBase** ChannelPtr = NetChannels.Find(PC))
 		{
 			// 重新指向新的Owner
 			(*ChannelPtr)->SetOwner(PC);
@@ -757,7 +770,7 @@ void UCommandFrameManager::PostLogin(AGameModeBase* GameMode, APlayerController*
 			Channel->RegisterCFrameManager(this);
 			Channel->SetOwner(PC);
 
-			NetChannels.Add(PC->GetNetConnection(), Channel);
+			NetChannels.Add(PC, Channel);
 
 			BroadcastOnFrameNetChannelRegistered(Channel);
 		}
@@ -768,12 +781,12 @@ void UCommandFrameManager::LoginOut(AGameModeBase* GameMode, AController* PC)
 {
 	if (GetWorld()->GetAuthGameMode() == GameMode)
 	{
-		if (auto ChannelPtr = NetChannels.Find(PC->GetNetConnection()))
+		if (auto ChannelPtr = NetChannels.Find(PC))
 		{
 			(*ChannelPtr)->Destroy();
 		}
 
-		NetChannels.Remove(PC->GetNetConnection());
+		NetChannels.Remove(PC);
 	}
 }
 
@@ -783,7 +796,7 @@ void UCommandFrameManager::RegisterClientChannel(ACommandFrameNetChannelBase* Ch
 	if (PC)
 	{
 		LocalNetChannel = Channel;
-		NetChannels.Add(PC->GetNetConnection(), Channel);
+		NetChannels.Add(PC, Channel);
 
 		BroadcastOnFrameNetChannelRegistered(Channel);
 	}
@@ -793,11 +806,11 @@ void UCommandFrameManager::BindOnFrameNetChannelRegistered(UActorComponent* Key,
 {
 	NetChannelDelegateMap.Add(Key, OnFrameNetChannelRegistered);
 
-	UNetConnection* Connection = Key->GetOwner()->GetNetConnection();
+	AController* Controller = CFrameUtils::GetOwnerIsController(Key->GetOwner());
 
-	if (IsValid(Connection))
+	if (IsValid(Controller))
 	{
-		if (ACommandFrameNetChannelBase** ChannelPtr = NetChannels.Find(Connection))
+		if (ACommandFrameNetChannelBase** ChannelPtr = NetChannels.Find(Controller))
 		{
 			BroadcastOnFrameNetChannelRegistered(*ChannelPtr);
 		}
@@ -808,11 +821,11 @@ void UCommandFrameManager::BindOnFrameNetChannelRegistered(AActor* Key, FOnFrame
 {
 	NetChannelDelegateMap.Add(Key, OnFrameNetChannelRegistered);
 
-	UNetConnection* Connection = Key->GetNetConnection();
+	AController* Controller = CFrameUtils::GetOwnerIsController(Key);
 
-	if (IsValid(Connection))
+	if (IsValid(Controller))
 	{
-		if (ACommandFrameNetChannelBase** ChannelPtr = NetChannels.Find(Connection))
+		if (ACommandFrameNetChannelBase** ChannelPtr = NetChannels.Find(Controller))
 		{
 			BroadcastOnFrameNetChannelRegistered(*ChannelPtr);
 		}

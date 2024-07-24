@@ -72,6 +72,11 @@ void UCFrameMoveModeStateMachine::Init(FCFrameMovementConfig& Config)
 
 	//////////////////////////////////////////////////////////////////////////
 	// Transitions
+
+	Config.ModeTransitionLinks.Sort([](const FCFrameModeTransitionLink& A, const FCFrameModeTransitionLink& B) {
+		return A.Priority > B.Priority;
+	});
+
 	for (auto Link : Config.ModeTransitionLinks)
 	{
 		ModeInfos.FindOrAdd(Link.FromMode).TransitionLinks.Add(Link);

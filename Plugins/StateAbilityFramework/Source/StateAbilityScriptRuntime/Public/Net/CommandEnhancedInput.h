@@ -154,6 +154,16 @@ public:
 		return TUniquePtr<FEnhancedInputActionEventBinding>(new FCommandInputEventDelegateBinding<TSignature>(*this, EInputBindingClone::ForceClone, WeakCommandInputSubsystem));
 	}
 
+	static TUniquePtr<FEnhancedInputActionEventBinding> CloneAsUnique(FCommandInputEventDelegateBinding<TSignature>& Binding)
+	{
+		return TUniquePtr<FEnhancedInputActionEventBinding>(new FCommandInputEventDelegateBinding<TSignature>(Binding, EInputBindingClone::ForceClone, Binding.WeakCommandInputSubsystem));
+	}
+
+	static TSharedPtr<FEnhancedInputActionEventBinding> CloneAsShared(FCommandInputEventDelegateBinding<TSignature>& Binding)
+	{
+		return TSharedPtr<FEnhancedInputActionEventBinding>(new FCommandInputEventDelegateBinding<TSignature>(Binding, EInputBindingClone::ForceClone, Binding.WeakCommandInputSubsystem));
+	}
+
 	// Implemented below.
 	virtual void Execute(const FInputActionInstance& ActionData) const override;
 
@@ -180,11 +190,6 @@ public:
 	void RemoveCommandInputByHandle(const uint32 Handle);
 	void RemoveCommandInput(const FInputBindingHandle& BindingToRemove);
 
-	const TMap<uint32, TUniquePtr<FEnhancedInputActionEventBinding>>& GetCommandInputBindings() const { return CommandInputEventBindingMap; }
-
-	/** The collection of action bindings. */
-	TMap<uint32, TUniquePtr<FEnhancedInputActionEventBinding>> CommandInputEventBindingMap;
-
 	/**
 	* Binds a delegate function matching any of the handler signatures to a UInputAction assigned via UInputMappingContext to the owner of this component.
 	*/
@@ -192,13 +197,15 @@ public:
 	template<class UserClass, typename... VarTypes>																																					\
 	FEnhancedInputActionEventBinding& BindCommandInput(const UInputAction* Action, ETriggerEvent TriggerEvent, UserClass* Object, typename HANDLER_SIG::template TMethodPtr< UserClass, VarTypes... > Func, VarTypes... Vars) \
 	{																																													\
-		FEnhancedInputActionEventDelegateBinding<HANDLER_SIG>* BindingPtr = new FCommandInputEventDelegateBinding<HANDLER_SIG>(Action, TriggerEvent, GetWorld());											\
-		TUniquePtr<FEnhancedInputActionEventDelegateBinding<HANDLER_SIG>> AB = TUniquePtr<FEnhancedInputActionEventDelegateBinding<HANDLER_SIG>>(BindingPtr);														\
+		using FDynamicBinding = FEnhancedInputActionEventDelegateBinding<HANDLER_SIG>;																									\
+		using FCommandDynamicBinding = FCommandInputEventDelegateBinding<HANDLER_SIG>;																									\
+		FCommandDynamicBinding* BindingPtr = new FCommandDynamicBinding(Action, TriggerEvent, GetWorld());																				\
+		TUniquePtr<FDynamicBinding> AB = TUniquePtr<FDynamicBinding>(BindingPtr);																										\
 		AB->Delegate.BindDelegate<UserClass>(Object, Func, Vars...);																													\
 		AB->Delegate.SetShouldFireWithEditorScriptGuard(ShouldFireDelegatesInEditor());																									\
 		TArray<TUniquePtr<FEnhancedInputActionEventBinding>>& Bindings = PRIVATE_GET(this, EnhancedActionEventBindings);																\
 		FEnhancedInputActionEventBinding& Handle = *(Bindings.Add_GetRef(MoveTemp(AB)));																								\
-		CommandInputEventBindingMap.Add(Handle.GetHandle(), Handle.Clone());																											\
+		CommandInputEventBindingMap.Add(Handle.GetHandle(), FCommandDynamicBinding::CloneAsShared((FCommandDynamicBinding&)Handle));													\
 		return Handle;																																									\
 	}
 
@@ -211,8 +218,11 @@ public:
 	 */
 	FEnhancedInputActionEventBinding& BindCommandInput(const UInputAction* Action, ETriggerEvent TriggerEvent, UObject* Object, FName FunctionName)
 	{		
-		FEnhancedInputActionEventDelegateBinding<FEnhancedInputActionHandlerDynamicSignature>* BindingPtr = new FCommandInputEventDelegateBinding<FEnhancedInputActionHandlerDynamicSignature>(Action, TriggerEvent, GetWorld());
-		TUniquePtr<FEnhancedInputActionEventDelegateBinding<FEnhancedInputActionHandlerDynamicSignature>> AB = TUniquePtr<FEnhancedInputActionEventDelegateBinding<FEnhancedInputActionHandlerDynamicSignature>>(BindingPtr);
+		using FDynamicBinding = FEnhancedInputActionEventDelegateBinding<FEnhancedInputActionHandlerDynamicSignature>;
+		using FCommandDynamicBinding = FCommandInputEventDelegateBinding<FEnhancedInputActionHandlerDynamicSignature>;
+		
+		FDynamicBinding* BindingPtr = new FCommandDynamicBinding(Action, TriggerEvent, GetWorld());
+		TUniquePtr<FDynamicBinding> AB = TUniquePtr<FDynamicBinding>(BindingPtr);
 
 		AB->Delegate.BindDelegate(Object, FunctionName);
 		AB->Delegate.SetShouldFireWithEditorScriptGuard(ShouldFireDelegatesInEditor());
@@ -220,10 +230,19 @@ public:
 		TArray<TUniquePtr<FEnhancedInputActionEventBinding>>& Bindings = PRIVATE_GET(this, EnhancedActionEventBindings);
 		FEnhancedInputActionEventBinding& Handle = *(Bindings.Add_GetRef(MoveTemp(AB)));
 
-		CommandInputEventBindingMap.Add(Handle.GetHandle(), Handle.Clone());
+		CommandInputEventBindingMap.Add(Handle.GetHandle(), FCommandDynamicBinding::CloneAsShared((FCommandDynamicBinding&)Handle));
 
 		return Handle;
 	}
+
+
+private:
+	friend class UCommandFrameManager;
+
+	const TMap<uint32, TSharedPtr<FEnhancedInputActionEventBinding>>& GetCommandInputBindings() const { return CommandInputEventBindingMap; }
+
+	/** The collection of action bindings. */
+	TMap<uint32, TSharedPtr<FEnhancedInputActionEventBinding>> CommandInputEventBindingMap;
 };
 
 template<>
