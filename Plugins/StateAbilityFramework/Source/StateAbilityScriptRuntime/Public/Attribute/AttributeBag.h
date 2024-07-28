@@ -28,10 +28,19 @@ void IDSExtraBackActionInterface::Execute_BindExtraBackAction(UObject* O, UInput
 	}
 }
 */
-
+//////////////////////////////////////////////////////////////////////////
+struct FAttributeNetGuidReference
+{
+	TSet<FNetworkGUID> UnmappedGUIDs;
+	TSet<FNetworkGUID> MappedDynamicGUIDs;
+	/** Buffer of data to re-serialize when the guids are mapped */
+	TArray<uint8> Buffer;
+	/** Number of bits in the buffer */
+	int32 NumBufferBits;
+};
 
 //////////////////////////////////////////////////////////////////////////
-
+// Mass Tag
 USTRUCT()
 struct FAttributeTagFragment : public FMassTag
 {
@@ -39,27 +48,28 @@ struct FAttributeTagFragment : public FMassTag
 };
 
 USTRUCT()
-struct FAttributeNetRoleTagFragment : public FMassTag
+struct FAttributeNetTagFragment : public FMassTag
 {
 	GENERATED_BODY()
 };
 
 USTRUCT()
-struct FAttributeServerTagFragment : public FAttributeNetRoleTagFragment
+struct FAttributeServerTagFragment : public FAttributeNetTagFragment
 {
 	GENERATED_BODY()
 };
 USTRUCT()
-struct FAttributeAutonomousTagFragment : public FAttributeNetRoleTagFragment
+struct FAttributeAutonomousTagFragment : public FAttributeNetTagFragment
 {
 	GENERATED_BODY()
 };
 USTRUCT()
-struct FAttributeSimulatedTagFragment : public FAttributeNetRoleTagFragment
+struct FAttributeSimulatedTagFragment : public FAttributeNetTagFragment
 {
 	GENERATED_BODY()
 };
 
+// Mass Fragment
 USTRUCT()
 struct FAttributeProviderFragment : public FMassFragment
 {
@@ -67,6 +77,24 @@ struct FAttributeProviderFragment : public FMassFragment
 
 	UPROPERTY()
 	TArray<UObject*> Listeners;
+};
+
+USTRUCT()
+struct FAttributeNetFragment : public FMassFragment
+{
+	GENERATED_BODY()
+
+	typedef uint16 FRepPropIndex;
+	TMap<FRepPropIndex, FAttributeNetGuidReference> GuidReferencesMap;
+};
+
+// Mass Shared Fragment
+USTRUCT()
+struct FAttributeNetSharedFragment : public FMassSharedFragment
+{
+	GENERATED_BODY()
+
+	TMap<UScriptStruct*, TArray<FProperty*>> ReplicatedProps;
 };
 
 //////////////////////////////////////////////////////////////////////////
@@ -135,7 +163,7 @@ public:
 
 	void Initialize(FAttributeEntityBuildParam& BuildParam);
 	bool Serialize(FArchive& Ar);
-	bool NetSerialize(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess);
+	bool NetDeltaSerialize(FNetDeltaSerializeInfo& deltaParms);
 
 	const uint8* GetMemory() const;
 	uint8* GetMutableMemory();
@@ -144,8 +172,14 @@ public:
 	template<typename T>
 	T& Get();
 protected:
+	virtual bool SerializeRead(FNetDeltaSerializeInfo& deltaParms);
+	virtual bool SerializeWrite(FNetDeltaSerializeInfo& deltaParms);
 	virtual bool NetSerializeDirtyItem(FArchive& Ar, UPackageMap* Map, const FNetBitArray& Changes);
 
+	bool NetSerializeItem(const FProperty* Prop, FArchive& Ar, UPackageMap* Map, void* Data);
+
+	FAttributeNetFragment& GetNetFragment();
+	FAttributeNetSharedFragment& GetNetSharedFragment();
 protected:
 	UPROPERTY()
 	FGuid UID = FGuid::NewGuid();
@@ -169,7 +203,7 @@ struct TStructOpsTypeTraits<FAttributeEntityBag> : public TStructOpsTypeTraitsBa
 	enum
 	{
 		WithSerializer = true,
-		WithNetSerializer = true,
+		WithNetDeltaSerializer = true,
 	};
 };
 
@@ -196,7 +230,7 @@ public:
 	const UAttributeBagStruct* GetAttributeBagStruct() const;
 
 	bool Serialize(FArchive& Ar);
-	bool NetSerialize(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess);
+	bool NetDeltaSerialize(FNetDeltaSerializeInfo& deltaParms);
 
 protected:
 	virtual bool NetSerializeDirtyItem(FArchive& Ar, UPackageMap* Map, const FNetBitArray& Changes) override;
@@ -210,6 +244,6 @@ template<> struct TStructOpsTypeTraits<FAttributeDynamicBag> : public TStructOps
 	enum
 	{
 		WithSerializer = true,
-		WithNetSerializer = true,
+		WithNetDeltaSerializer = true,
 	};
 };

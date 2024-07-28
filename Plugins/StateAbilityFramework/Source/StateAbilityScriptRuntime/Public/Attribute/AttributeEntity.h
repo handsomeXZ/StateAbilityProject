@@ -37,31 +37,42 @@ struct FAttributeEntity
 
 	FStructView Get(const UScriptStruct* FragmentType) const;
 	
-	template<typename T>
-	T& Get() const;
-	template<typename T>
-	T* GetPtr() const;
+	template<typename FragmentType>
+	FragmentType& Get() const;
+	template<typename FragmentType>
+	FragmentType* GetPtr() const;
+
+	template<typename SharedFragmentType>
+	SharedFragmentType& GetShared() const;
 	
 private:
 	FMassEntityHandle EntityHandle;
 	TWeakObjectPtr<UMassEntitySubsystem> EntitySubsystem;
 };
 
-template<typename T>
-T& FAttributeEntity::Get() const
+template<typename FragmentType>
+FragmentType& FAttributeEntity::Get() const
 {
 	ensureMsgf(EntitySubsystem.IsValid() && EntityHandle.IsValid(), TEXT("EntitySubsystem is invalid or EntityHandle is invalid."));
 
-	return EntitySubsystem->GetEntityManager().GetFragmentData<T>(EntityHandle);
+	return EntitySubsystem->GetEntityManager().GetFragmentData<FragmentType>(EntityHandle);
 }
 
-template<typename T>
-T* FAttributeEntity::GetPtr() const
+template<typename FragmentType>
+FragmentType* FAttributeEntity::GetPtr() const
 {
 	if (EntitySubsystem.IsValid() && EntityHandle.IsValid())
 	{
-		return EntitySubsystem->GetEntityManager().GetFragmentDataPtr<T>(EntityHandle);
+		return EntitySubsystem->GetEntityManager().GetFragmentDataPtr<FragmentType>(EntityHandle);
 	}
 
 	return nullptr;
+}
+
+template<typename SharedFragmentType>
+SharedFragmentType& FAttributeEntity::GetShared() const
+{
+	ensureMsgf(EntitySubsystem.IsValid() && EntityHandle.IsValid(), TEXT("EntitySubsystem is invalid or EntityHandle is invalid."));
+
+	return EntitySubsystem->GetEntityManager().GetSharedFragmentDataChecked<SharedFragmentType>(EntityHandle);
 }
