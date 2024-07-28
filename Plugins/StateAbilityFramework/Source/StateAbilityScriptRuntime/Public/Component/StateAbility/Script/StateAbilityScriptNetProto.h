@@ -4,8 +4,8 @@
 
 #include "StateAbilityScriptNetProto.generated.h"
 
-UCLASS()
-class UStateAbilityScriptNetProto : public UObject
+USTRUCT()
+struct FStateAbilityScriptNetProto
 {
 	GENERATED_BODY()
 public:

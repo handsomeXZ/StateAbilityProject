@@ -2,10 +2,10 @@
 	"FileVersion": 3,
 	"Version": 1,
 	"VersionName": "1.0",
-	"FriendlyName": "StateAbilityFramework",
+	"FriendlyName": "ConfigVars",
 	"Description": "",
 	"Category": "Other",
-	"CreatedBy": "JinTaojie",
+	"CreatedBy": "JinTaoJie",
 	"CreatedByURL": "",
 	"DocsURL": "",
 	"MarketplaceURL": "",
@@ -16,12 +16,12 @@
 	"Installed": false,
 	"Modules": [
 		{
-			"Name": "StateAbilityScriptRuntime",
+			"Name": "ConfigVars",
 			"Type": "Runtime",
 			"LoadingPhase": "Default"
 		},
 		{
-			"Name": "StateAbilityScriptEditor",
+			"Name": "ConfigVarsEditor",
 			"Type": "Editor",
 			"LoadingPhase": "Default"
 		}
@@ -30,22 +30,6 @@
 		{
 			"Name": "StructUtils",
 			"Enabled": true
-		},
-		{
-			"Name": "EnhancedInput",
-			"Enabled": true
-		},
-		{
-			"Name": "Mover",
-			"Enabled": true
-		},
-		{
-			"Name": "MassEntity",
-			"Enabled": true
-		},
-		{
-			"Name": "ConfigVars",
-			"Enabled": true
-		},
+		}
 	]
 }

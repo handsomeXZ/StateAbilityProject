@@ -1,33 +1,51 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
+using System.IO;
 using UnrealBuildTool;
 
-public class StateAbilityScriptEditor : ModuleRules
+public class ConfigVarsEditor : ModuleRules
 {
-	public StateAbilityScriptEditor(ReadOnlyTargetRules Target) : base(Target)
+	public ConfigVarsEditor(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
-		
+
+    var EngineDir = Path.GetFullPath(Target.RelativeEnginePath);
+
         PublicIncludePaths.AddRange(
             new string[] {
                 System.IO.Path.Combine(GetModuleDirectory("CoreUObject"), "Private"),
-                System.IO.Path.Combine(GetModuleDirectory("PropertyEditor"), "Private")
+                System.IO.Path.Combine(GetModuleDirectory("PropertyEditor"), "Private"),
            }
         );
 
         PrivateIncludePaths.AddRange(
             new string[] {
                 System.IO.Path.Combine(GetModuleDirectory("CoreUObject"), "Private"),
-                System.IO.Path.Combine(GetModuleDirectory("PropertyEditor"), "Private")
+                System.IO.Path.Combine(GetModuleDirectory("PropertyEditor"), "Private"),
            }
         );
+
+        PublicIncludePaths.AddRange(
+			new string[] {
+				// ... add public include paths required here ...
+			}
+			);
+				
+		
+		PrivateIncludePaths.AddRange(
+			new string[] {
+				// ... add other private include paths required here ...
+			}
+			);
+			
 		
 		PublicDependencyModuleNames.AddRange(
 			new string[]
 			{
 				"Core",
 				// ... add other public dependencies that you statically link with here ...
-			}
+				"ConfigVars",
+            }
 			);
 			
 		
@@ -39,31 +57,11 @@ public class StateAbilityScriptEditor : ModuleRules
 				"Slate",
 				"SlateCore",
 				// ... add private dependencies that you statically link with here ...	
-				"AssetTools",
-                "UnrealEd",
-                "ToolMenus",
-                "GraphEditor",
-                "ApplicationCore",
-                "GameplayTags",
-                "ContentBrowser",
-                "ClassViewer",
-                "StructViewer",
-                "AssetRegistry",
-                "KismetWidgets",
-                "InputCore",
-
-                "AIGraph",        //@Todo: 暂时借用一下它的Class搜集器
-                "Documentation",
+                "PropertyEditor",
                 "StructUtils",
-                "ToolWidgets",
+                "UnrealEd",
                 "Projects",
-                "BlueprintGraph",
-                "PropertyEditor",// @TODO：为了使用SPropertyValueWidget的暂时处理方式
-                "SceneOutliner",
-
-                "StateAbilityScriptRuntime",
-				"ConfigVars",
-			}
+            }
 			);
 		
 		

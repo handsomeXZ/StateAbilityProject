@@ -2,7 +2,6 @@
 #include "CoreMinimal.h"
 
 #include "StructView.h"
-
 #include "MassEntityTypes.h"
 #include "MassEntityManager.h"
 #include "MassEntitySubsystem.h"
@@ -55,7 +54,7 @@ FragmentType& FAttributeEntity::Get() const
 {
 	ensureMsgf(EntitySubsystem.IsValid() && EntityHandle.IsValid(), TEXT("EntitySubsystem is invalid or EntityHandle is invalid."));
 
-	return EntitySubsystem->GetEntityManager().GetFragmentData<FragmentType>(EntityHandle);
+	return EntitySubsystem->GetEntityManager().GetFragmentDataChecked<FragmentType>(EntityHandle);
 }
 
 template<typename FragmentType>

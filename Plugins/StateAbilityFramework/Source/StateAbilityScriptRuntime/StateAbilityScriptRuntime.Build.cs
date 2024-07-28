@@ -29,6 +29,9 @@ public class StateAbilityScriptRuntime : ModuleRules
 				// ... add other public dependencies that you statically link with here ...
 				"EnhancedInput",
                 "DeveloperSettings",
+				"ConfigVars",
+				// ECS
+				"MassEntity",
             }
 			);
 			
@@ -46,18 +49,23 @@ public class StateAbilityScriptRuntime : ModuleRules
                 "StructUtils",
                 "NetCore",
 
-				// ECS
-				"MassEntity",
-
 				// 临时借用一下Mover内部的类
                 "Mover",
 				// 临时借用一下Debug
 				"Chaos",
             }
 			);
-		
-		
-		DynamicallyLoadedModuleNames.AddRange(
+        
+		if (Target.bBuildEditor == true)
+        {
+            PrivateDependencyModuleNames.AddRange(
+                new string[]
+                {
+                        "UnrealEd"
+                });
+        }
+
+        DynamicallyLoadedModuleNames.AddRange(
 			new string[]
 			{
 				// ... add any modules that your module loads dynamically here ...
