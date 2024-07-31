@@ -11,7 +11,7 @@
 
 #define LOCTEXT_NAMESPACE "AttributeDetails"
 
-namespace State::StructUtils
+namespace Attribute
 {
 	// UFunction calling helpers. 
 	// Use our "own" hardcoded reflection system for types used in UFunctions calls in this file.
@@ -19,11 +19,10 @@ namespace State::StructUtils
 
 #define DEFINE_TYPENAME(InType) template<> struct TypeName<InType> { static const TCHAR *Get() { return TEXT(#InType); }};
 	DEFINE_TYPENAME(bool)
-	DEFINE_TYPENAME(FGuid)
-	DEFINE_TYPENAME(FName)
-	DEFINE_TYPENAME(FEdGraphPinType)
+		DEFINE_TYPENAME(FGuid)
+		DEFINE_TYPENAME(FName)
+		DEFINE_TYPENAME(FEdGraphPinType)
 #undef DEFINE_TYPENAME
-
 
 	// Wrapper around a param that store an address (const_cast for const ptr, be careful of that)
 	// a string identifiying the underlying cpp type and if the input value is const, mark it const.
@@ -64,6 +63,7 @@ namespace State::StructUtils
 		const FStructProperty* StructProperty = CastField<const FStructProperty>(Property);
 		return StructProperty && StructProperty->Struct->IsA(TBaseStructure<T>::Get()->GetClass());
 	}
+
 	bool FindUserFunction(const FProperty* Property, FName InFuncMetadataName, UFunction*& OutFunc, UObject*& OutTarget)
 	{
 		OutFunc = nullptr;
@@ -108,337 +108,6 @@ namespace State::StructUtils
 		}
 
 		return OutTarget != nullptr && OutFunc != nullptr;
-	}
-
-	FStateAbilityAttributeBag* GetAttributeBagFromBagProperty(const FProperty* BagProperty, UObject* BagOwner)
-	{
-		if (const FStructProperty* StructProperty = CastField<const FStructProperty>(BagProperty))
-		{
-			if (StructProperty->Struct->IsChildOf(FStateAbilityAttributeBag::StaticStruct()))
-			{
-				void* RawData = StructProperty->ContainerPtrToValuePtr<void>(BagOwner);
-				return UE::StructUtils::GetStructPtr<FStateAbilityAttributeBag>(StructProperty->Struct, RawData);
-			}
-		}
-		return nullptr;
-	}
-
-	/** @return Attribute bag struct common to all edited properties. */
-	const UStateAttributeBag* GetCommonBagStruct(const FProperty* StructProperty, UObject* BagOwner)
-	{
-		const UStateAttributeBag* CommonBagStruct = nullptr;
-
-		if (FStateAbilityAttributeBag* AttributeBag = GetAttributeBagFromBagProperty(StructProperty, BagOwner))
-		{
-			CommonBagStruct = AttributeBag->GetAttributeBagStruct();
-		}
-		return CommonBagStruct;
-	}
-
-	/** @return property descriptors of the Attribute bag struct common to all edited properties. */
-	TArray<FAttributeBagPropertyDesc> GetCommonPropertyDescs(const FProperty* StructProperty, UObject* BagOwner)
-	{
-		TArray<FAttributeBagPropertyDesc> PropertyDescs;
-
-		if (const UStateAttributeBag* BagStruct = GetCommonBagStruct(StructProperty, BagOwner))
-		{
-			PropertyDescs = BagStruct->GetPropertyDescs();
-		}
-
-		return PropertyDescs;
-	}
-
-
-	/** @return Blueprint pin type from property descriptor. */
-	FEdGraphPinType GetPropertyDescAsPin(const FAttributeBagPropertyDesc& Desc)
-	{
-		UEnum* PropertyTypeEnum = StaticEnum<EAttributeBagPropertyType>();
-		check(PropertyTypeEnum);
-
-		FEdGraphPinType PinType;
-		PinType.PinSubCategory = NAME_None;
-
-		// Container type
-		//@todo: Handle nested containers in property selection.
-		const EAttributeBagContainerType ContainerType = Desc.ContainerTypes.GetFirstContainerType();
-		switch (ContainerType)
-		{
-		case EAttributeBagContainerType::Array:
-			PinType.ContainerType = EPinContainerType::Array;
-			break;
-		default:
-			PinType.ContainerType = EPinContainerType::None;
-		}
-
-		// Value type
-		switch (Desc.ValueType)
-		{
-		case EAttributeBagPropertyType::Bool:
-			PinType.PinCategory = UEdGraphSchema_K2::PC_Boolean;
-			break;
-		case EAttributeBagPropertyType::Byte:
-			PinType.PinCategory = UEdGraphSchema_K2::PC_Byte;
-			break;
-		case EAttributeBagPropertyType::Int32:
-			PinType.PinCategory = UEdGraphSchema_K2::PC_Int;
-			break;
-		case EAttributeBagPropertyType::Int64:
-			PinType.PinCategory = UEdGraphSchema_K2::PC_Int64;
-			break;
-		case EAttributeBagPropertyType::Float:
-			PinType.PinCategory = UEdGraphSchema_K2::PC_Real;
-			PinType.PinSubCategory = UEdGraphSchema_K2::PC_Float;
-			break;
-		case EAttributeBagPropertyType::Double:
-			PinType.PinCategory = UEdGraphSchema_K2::PC_Real;
-			PinType.PinSubCategory = UEdGraphSchema_K2::PC_Double;
-			break;
-		case EAttributeBagPropertyType::Name:
-			PinType.PinCategory = UEdGraphSchema_K2::PC_Name;
-			break;
-		case EAttributeBagPropertyType::String:
-			PinType.PinCategory = UEdGraphSchema_K2::PC_String;
-			break;
-		case EAttributeBagPropertyType::Text:
-			PinType.PinCategory = UEdGraphSchema_K2::PC_Text;
-			break;
-		case EAttributeBagPropertyType::Enum:
-			// @todo: some pin coloring is not correct due to this (byte-as-enum vs enum). 
-			PinType.PinCategory = UEdGraphSchema_K2::PC_Enum;
-			PinType.PinSubCategoryObject = const_cast<UObject*>(Desc.ValueTypeObject.Get());
-			break;
-		case EAttributeBagPropertyType::Struct:
-			PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
-			PinType.PinSubCategoryObject = const_cast<UObject*>(Desc.ValueTypeObject.Get());
-			break;
-		case EAttributeBagPropertyType::Object:
-			PinType.PinCategory = UEdGraphSchema_K2::PC_Object;
-			PinType.PinSubCategoryObject = const_cast<UObject*>(Desc.ValueTypeObject.Get());
-			break;
-		case EAttributeBagPropertyType::SoftObject:
-			PinType.PinCategory = UEdGraphSchema_K2::PC_SoftObject;
-			PinType.PinSubCategoryObject = const_cast<UObject*>(Desc.ValueTypeObject.Get());
-			break;
-		case EAttributeBagPropertyType::Class:
-			PinType.PinCategory = UEdGraphSchema_K2::PC_Class;
-			PinType.PinSubCategoryObject = const_cast<UObject*>(Desc.ValueTypeObject.Get());
-			break;
-		case EAttributeBagPropertyType::SoftClass:
-			PinType.PinCategory = UEdGraphSchema_K2::PC_SoftClass;
-			PinType.PinSubCategoryObject = const_cast<UObject*>(Desc.ValueTypeObject.Get());
-			break;
-		default:
-			ensureMsgf(false, TEXT("Unhandled value type %s"), *UEnum::GetValueAsString(Desc.ValueType));
-			break;
-		}
-
-		return PinType;
-	}
-
-	/** Sets property descriptor based on a Blueprint pin type. */
-	void SetPropertyDescFromPin(FAttributeBagPropertyDesc& Desc, const FEdGraphPinType& PinType)
-	{
-		const UAttributeBagSchema* Schema = GetDefault<UAttributeBagSchema>();
-		check(Schema);
-
-		// remove any existing containers
-		Desc.ContainerTypes.Reset();
-
-		// Fill Container types, if any
-		switch (PinType.ContainerType)
-		{
-		case EPinContainerType::Array:
-			Desc.ContainerTypes.Add(EAttributeBagContainerType::Array);
-			break;
-		case EPinContainerType::Set:
-			ensureMsgf(false, TEXT("Unsuported container type [Set] "));
-			break;
-		case EPinContainerType::Map:
-			ensureMsgf(false, TEXT("Unsuported container type [Map] "));
-			break;
-		default:
-			break;
-		}
-
-		// Value type
-		if (PinType.PinCategory == UEdGraphSchema_K2::PC_Boolean)
-		{
-			Desc.ValueType = EAttributeBagPropertyType::Bool;
-			Desc.ValueTypeObject = nullptr;
-		}
-		else if (PinType.PinCategory == UEdGraphSchema_K2::PC_Byte)
-		{
-			if (UEnum* Enum = Cast<UEnum>(PinType.PinSubCategoryObject))
-			{
-				Desc.ValueType = EAttributeBagPropertyType::Enum;
-				Desc.ValueTypeObject = PinType.PinSubCategoryObject.Get();
-			}
-			else
-			{
-				Desc.ValueType = EAttributeBagPropertyType::Byte;
-				Desc.ValueTypeObject = nullptr;
-			}
-		}
-		else if (PinType.PinCategory == UEdGraphSchema_K2::PC_Int)
-		{
-			Desc.ValueType = EAttributeBagPropertyType::Int32;
-			Desc.ValueTypeObject = nullptr;
-		}
-		else if (PinType.PinCategory == UEdGraphSchema_K2::PC_Int64)
-		{
-			Desc.ValueType = EAttributeBagPropertyType::Int64;
-			Desc.ValueTypeObject = nullptr;
-		}
-		else if (PinType.PinCategory == UEdGraphSchema_K2::PC_Real)
-		{
-			if (PinType.PinSubCategory == UEdGraphSchema_K2::PC_Float)
-			{
-				Desc.ValueType = EAttributeBagPropertyType::Float;
-				Desc.ValueTypeObject = nullptr;
-			}
-			else if (PinType.PinSubCategory == UEdGraphSchema_K2::PC_Double)
-			{
-				Desc.ValueType = EAttributeBagPropertyType::Double;
-				Desc.ValueTypeObject = nullptr;
-			}
-		}
-		else if (PinType.PinCategory == UEdGraphSchema_K2::PC_Name)
-		{
-			Desc.ValueType = EAttributeBagPropertyType::Name;
-			Desc.ValueTypeObject = nullptr;
-		}
-		else if (PinType.PinCategory == UEdGraphSchema_K2::PC_String)
-		{
-			Desc.ValueType = EAttributeBagPropertyType::String;
-			Desc.ValueTypeObject = nullptr;
-		}
-		else if (PinType.PinCategory == UEdGraphSchema_K2::PC_Text)
-		{
-			Desc.ValueType = EAttributeBagPropertyType::Text;
-			Desc.ValueTypeObject = nullptr;
-		}
-		else if (PinType.PinCategory == UEdGraphSchema_K2::PC_Enum)
-		{
-			Desc.ValueType = EAttributeBagPropertyType::Enum;
-			Desc.ValueTypeObject = PinType.PinSubCategoryObject.Get();
-		}
-		else if (PinType.PinCategory == UEdGraphSchema_K2::PC_Struct)
-		{
-			Desc.ValueType = EAttributeBagPropertyType::Struct;
-			Desc.ValueTypeObject = PinType.PinSubCategoryObject.Get();
-		}
-		else if (PinType.PinCategory == UEdGraphSchema_K2::PC_Object)
-		{
-			Desc.ValueType = EAttributeBagPropertyType::Object;
-			Desc.ValueTypeObject = PinType.PinSubCategoryObject.Get();
-		}
-		else if (PinType.PinCategory == UEdGraphSchema_K2::PC_SoftObject)
-		{
-			Desc.ValueType = EAttributeBagPropertyType::SoftObject;
-			Desc.ValueTypeObject = PinType.PinSubCategoryObject.Get();
-		}
-		else if (PinType.PinCategory == UEdGraphSchema_K2::PC_Class)
-		{
-			Desc.ValueType = EAttributeBagPropertyType::Class;
-			Desc.ValueTypeObject = PinType.PinSubCategoryObject.Get();
-		}
-		else if (PinType.PinCategory == UEdGraphSchema_K2::PC_SoftClass)
-		{
-			Desc.ValueType = EAttributeBagPropertyType::SoftClass;
-			Desc.ValueTypeObject = PinType.PinSubCategoryObject.Get();
-		}
-		else
-		{
-			ensureMsgf(false, TEXT("Unhandled pin category %s"), *PinType.PinCategory.ToString());
-		}
-	}
-
-	/** Creates new property bag struct and sets all properties to use it, migrating over old values. */
-	void SetPropertyDescs(const FProperty* StructProperty, UObject* BagOwner, const TConstArrayView<FAttributeBagPropertyDesc> PropertyDescs)
-	{
-		if (ensure(IsScriptStruct<FStateAbilityAttributeBag>(StructProperty)))
-		{
-			// Create new bag struct
-			const UStateAttributeBag* NewBagStruct = UStateAttributeBag::GetOrCreateFromDescs(PropertyDescs);
-
-			// Migrate structs to the new type, copying values over.
-			if (FStateAbilityAttributeBag* Bag = GetAttributeBagFromBagProperty(StructProperty, BagOwner))
-			{
-				Bag->MigrateToNewBagStruct(NewBagStruct);
-			}
-		}
-	}
-
-	template<typename TFunc>
-	void ApplyChangesToPropertyDescs(const FText& SessionName, const FProperty* StructProperty, UObject* BagOwner, TFunc&& Function)
-	{
-		if (!StructProperty || !IsValid(BagOwner))
-		{
-			return;
-		}
-
-		FScopedTransaction Transaction(SessionName);
-		TArray<FAttributeBagPropertyDesc> PropertyDescs = GetCommonPropertyDescs(StructProperty, BagOwner);
-
-		Function(PropertyDescs);
-
-		SetPropertyDescs(StructProperty, BagOwner, PropertyDescs);
-	}
-
-	// Validate that the function pass as parameter has signature ReturnType(ArgsTypes...)
-	template <typename ReturnType, typename... ArgsTypes>
-	bool ValidateFunctionSignature(UFunction* InFunc)
-	{
-		if (!InFunc)
-		{
-			return false;
-		}
-
-		constexpr int32 NumParms = std::is_same_v <ReturnType, void> ? sizeof...(ArgsTypes) : (sizeof...(ArgsTypes) + 1);
-
-		if (NumParms != InFunc->NumParms)
-		{
-			return false;
-		}
-
-		const TCHAR* ArgsCppTypes[NumParms] = { TypeName<ArgsTypes>::Get() ... };
-
-		// If we have a return type, put it at the end. UFunction will have the return type after InArgs in the field iterator.
-		if constexpr (!std::is_same_v<ReturnType, void>)
-		{
-			ArgsCppTypes[NumParms - 1] = TypeName<ReturnType>::Get();
-		}
-		else
-		{
-			// Otherwise, check that the function doesn't have a return param
-			if (InFunc->GetReturnProperty() != nullptr)
-			{
-				return false;
-			}
-		}
-
-		int32 ArgCppTypesIndex = 0;
-		for (TFieldIterator<FProperty> It(InFunc); It && It->HasAnyPropertyFlags(EPropertyFlags::CPF_Parm); ++It)
-		{
-			const FString PropertyCppType = It->GetCPPType();
-			if (PropertyCppType != ArgsCppTypes[ArgCppTypesIndex])
-			{
-				return false;
-			}
-
-			// Also making sure that the last param is a return param, if we have a return value
-			if constexpr (!std::is_same_v<ReturnType, void>)
-			{
-				if (ArgCppTypesIndex == NumParms - 1 && !It->HasAnyPropertyFlags(EPropertyFlags::CPF_ReturnParm))
-				{
-					return false;
-				}
-			}
-
-			ArgCppTypesIndex++;
-		}
-
-		return true;
 	}
 
 	template <typename ReturnType, typename... ArgsTypes>
@@ -559,6 +228,63 @@ namespace State::StructUtils
 		}
 	}
 
+
+	// Validate that the function pass as parameter has signature ReturnType(ArgsTypes...)
+	template <typename ReturnType, typename... ArgsTypes>
+	bool ValidateFunctionSignature(UFunction* InFunc)
+	{
+		if (!InFunc)
+		{
+			return false;
+		}
+
+		constexpr int32 NumParms = std::is_same_v <ReturnType, void> ? sizeof...(ArgsTypes) : (sizeof...(ArgsTypes) + 1);
+
+		if (NumParms != InFunc->NumParms)
+		{
+			return false;
+		}
+
+		const TCHAR* ArgsCppTypes[NumParms] = { TypeName<ArgsTypes>::Get() ... };
+
+		// If we have a return type, put it at the end. UFunction will have the return type after InArgs in the field iterator.
+		if constexpr (!std::is_same_v<ReturnType, void>)
+		{
+			ArgsCppTypes[NumParms - 1] = TypeName<ReturnType>::Get();
+		}
+		else
+		{
+			// Otherwise, check that the function doesn't have a return param
+			if (InFunc->GetReturnProperty() != nullptr)
+			{
+				return false;
+			}
+		}
+
+		int32 ArgCppTypesIndex = 0;
+		for (TFieldIterator<FProperty> It(InFunc); It && It->HasAnyPropertyFlags(EPropertyFlags::CPF_Parm); ++It)
+		{
+			const FString PropertyCppType = It->GetCPPType();
+			if (PropertyCppType != ArgsCppTypes[ArgCppTypesIndex])
+			{
+				return false;
+			}
+
+			// Also making sure that the last param is a return param, if we have a return value
+			if constexpr (!std::is_same_v<ReturnType, void>)
+			{
+				if (ArgCppTypesIndex == NumParms - 1 && !It->HasAnyPropertyFlags(EPropertyFlags::CPF_ReturnParm))
+				{
+					return false;
+				}
+			}
+
+			ArgCppTypesIndex++;
+		}
+
+		return true;
+	}
+
 	bool CanHaveMemberVariableOfType(const FEdGraphPinType& PinType)
 	{
 		if (PinType.PinCategory == UEdGraphSchema_K2::PC_Exec
@@ -573,21 +299,6 @@ namespace State::StructUtils
 		return true;
 	}
 
-	/** @return true of the property name is not used yet by the property bag structure common to all edited properties. */
-	bool IsUniqueName(const FName NewName, const FName OldName, const FProperty* StructProperty, UObject* BagOwner)
-	{
-		if (NewName == OldName)
-		{
-			return false;
-		}
-
-		if (const UStateAttributeBag* BagStruct = GetCommonBagStruct(StructProperty, BagOwner))
-		{
-			return BagStruct->FindPropertyDescByName(NewName) == nullptr;
-		}
-
-		return true;
-	}
 
 	/** @return sanitized property name based on the input string. */
 	FName GetValidPropertyName(const FString& Name)
@@ -611,41 +322,454 @@ namespace State::StructUtils
 
 		return Result;
 	}
+
+
+	FAttributeBag* GetAttributeBagFromBagProperty(const FProperty* BagProperty, UObject* BagOwner)
+	{
+		if (const FStructProperty* StructProperty = CastField<const FStructProperty>(BagProperty))
+		{
+			if (StructProperty->Struct->IsChildOf(FAttributeBag::StaticStruct()))
+			{
+				void* RawData = StructProperty->ContainerPtrToValuePtr<void>(BagOwner);
+				return UE::StructUtils::GetStructPtr<FAttributeBag>(StructProperty->Struct, RawData);
+			}
+		}
+		return nullptr;
+	}
+
+	/** @return Attribute bag struct common to all edited properties. */
+	const UScriptStruct* GetCommonBagStruct(const FProperty* StructProperty, UObject* BagOwner)
+	{
+		const UScriptStruct* CommonBagStruct = nullptr;
+
+		if (FAttributeBag* AttributeBag = GetAttributeBagFromBagProperty(StructProperty, BagOwner))
+		{
+			CommonBagStruct = AttributeBag->GetScriptStruct();
+		}
+		return CommonBagStruct;
+	}
+
+	namespace DynamicBag
+	{
+		FAttributeDynamicBag* GetAttributeDynamicBagFromBagProperty(const FProperty* DynamicBagProperty, UObject* DynamicBagOwner)
+		{
+			if (const FStructProperty* StructProperty = CastField<const FStructProperty>(DynamicBagProperty))
+			{
+				if (StructProperty->Struct->IsChildOf(FAttributeDynamicBag::StaticStruct()))
+				{
+					void* RawData = StructProperty->ContainerPtrToValuePtr<void>(DynamicBagOwner);
+					return UE::StructUtils::GetStructPtr<FAttributeDynamicBag>(StructProperty->Struct, RawData);
+				}
+			}
+			return nullptr;
+		}
+
+		/** @return Attribute DynamicBag struct to all edited properties. */
+		const UAttributeBagStruct* GetDynamicBagStruct(const FProperty* StructProperty, UObject* BagOwner)
+		{
+			const UAttributeBagStruct* CommonBagStruct = nullptr;
+
+			if (FAttributeDynamicBag* DynamicBag = GetAttributeDynamicBagFromBagProperty(StructProperty, BagOwner))
+			{
+				CommonBagStruct = DynamicBag->GetAttributeBagStruct();
+			}
+			return CommonBagStruct;
+		}
+
+		/** @return property descriptors of the Attribute DynamicBag struct to all edited properties. */
+		TArray<FAttributeBagPropertyDesc> GetDynamicPropertyDescs(const FProperty* DynamicBagProperty, UObject* DynamicBagOwner)
+		{
+			TArray<FAttributeBagPropertyDesc> PropertyDescs;
+
+			if (const UAttributeBagStruct* BagStruct = GetDynamicBagStruct(DynamicBagProperty, DynamicBagOwner))
+			{
+				PropertyDescs = BagStruct->GetPropertyDescs();
+			}
+
+			return PropertyDescs;
+		}
+
+		/** @return Blueprint pin type from property descriptor. */
+		FEdGraphPinType GetPropertyDescAsPin(const FAttributeBagPropertyDesc& Desc)
+		{
+			UEnum* PropertyTypeEnum = StaticEnum<EAttributeBagPropertyType>();
+			check(PropertyTypeEnum);
+
+			FEdGraphPinType PinType;
+			PinType.PinSubCategory = NAME_None;
+
+			// Container type
+			//@todo: Handle nested containers in property selection.
+			const EAttributeBagContainerType ContainerType = Desc.ContainerTypes.GetFirstContainerType();
+			switch (ContainerType)
+			{
+			case EAttributeBagContainerType::Array:
+				PinType.ContainerType = EPinContainerType::Array;
+				break;
+			default:
+				PinType.ContainerType = EPinContainerType::None;
+			}
+
+			// Value type
+			switch (Desc.ValueType)
+			{
+			case EAttributeBagPropertyType::Bool:
+				PinType.PinCategory = UEdGraphSchema_K2::PC_Boolean;
+				break;
+			case EAttributeBagPropertyType::Byte:
+				PinType.PinCategory = UEdGraphSchema_K2::PC_Byte;
+				break;
+			case EAttributeBagPropertyType::Int32:
+				PinType.PinCategory = UEdGraphSchema_K2::PC_Int;
+				break;
+			case EAttributeBagPropertyType::Int64:
+				PinType.PinCategory = UEdGraphSchema_K2::PC_Int64;
+				break;
+			case EAttributeBagPropertyType::Float:
+				PinType.PinCategory = UEdGraphSchema_K2::PC_Real;
+				PinType.PinSubCategory = UEdGraphSchema_K2::PC_Float;
+				break;
+			case EAttributeBagPropertyType::Double:
+				PinType.PinCategory = UEdGraphSchema_K2::PC_Real;
+				PinType.PinSubCategory = UEdGraphSchema_K2::PC_Double;
+				break;
+			case EAttributeBagPropertyType::Name:
+				PinType.PinCategory = UEdGraphSchema_K2::PC_Name;
+				break;
+			case EAttributeBagPropertyType::String:
+				PinType.PinCategory = UEdGraphSchema_K2::PC_String;
+				break;
+			case EAttributeBagPropertyType::Text:
+				PinType.PinCategory = UEdGraphSchema_K2::PC_Text;
+				break;
+			case EAttributeBagPropertyType::Enum:
+				// @todo: some pin coloring is not correct due to this (byte-as-enum vs enum). 
+				PinType.PinCategory = UEdGraphSchema_K2::PC_Enum;
+				PinType.PinSubCategoryObject = const_cast<UObject*>(Desc.ValueTypeObject.Get());
+				break;
+			case EAttributeBagPropertyType::Struct:
+				PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+				PinType.PinSubCategoryObject = const_cast<UObject*>(Desc.ValueTypeObject.Get());
+				break;
+			case EAttributeBagPropertyType::Object:
+				PinType.PinCategory = UEdGraphSchema_K2::PC_Object;
+				PinType.PinSubCategoryObject = const_cast<UObject*>(Desc.ValueTypeObject.Get());
+				break;
+			case EAttributeBagPropertyType::SoftObject:
+				PinType.PinCategory = UEdGraphSchema_K2::PC_SoftObject;
+				PinType.PinSubCategoryObject = const_cast<UObject*>(Desc.ValueTypeObject.Get());
+				break;
+			case EAttributeBagPropertyType::Class:
+				PinType.PinCategory = UEdGraphSchema_K2::PC_Class;
+				PinType.PinSubCategoryObject = const_cast<UObject*>(Desc.ValueTypeObject.Get());
+				break;
+			case EAttributeBagPropertyType::SoftClass:
+				PinType.PinCategory = UEdGraphSchema_K2::PC_SoftClass;
+				PinType.PinSubCategoryObject = const_cast<UObject*>(Desc.ValueTypeObject.Get());
+				break;
+			default:
+				ensureMsgf(false, TEXT("Unhandled value type %s"), *UEnum::GetValueAsString(Desc.ValueType));
+				break;
+			}
+
+			return PinType;
+		}
+
+		/** Sets property descriptor based on a Blueprint pin type. */
+		void SetPropertyDescFromPin(FAttributeBagPropertyDesc& Desc, const FEdGraphPinType& PinType)
+		{
+			const UAttributeBagSchema* Schema = GetDefault<UAttributeBagSchema>();
+			check(Schema);
+
+			// remove any existing containers
+			Desc.ContainerTypes.Reset();
+
+			// Fill Container types, if any
+			switch (PinType.ContainerType)
+			{
+			case EPinContainerType::Array:
+				Desc.ContainerTypes.Add(EAttributeBagContainerType::Array);
+				break;
+			case EPinContainerType::Set:
+				ensureMsgf(false, TEXT("Unsuported container type [Set] "));
+				break;
+			case EPinContainerType::Map:
+				ensureMsgf(false, TEXT("Unsuported container type [Map] "));
+				break;
+			default:
+				break;
+			}
+
+			// Value type
+			if (PinType.PinCategory == UEdGraphSchema_K2::PC_Boolean)
+			{
+				Desc.ValueType = EAttributeBagPropertyType::Bool;
+				Desc.ValueTypeObject = nullptr;
+			}
+			else if (PinType.PinCategory == UEdGraphSchema_K2::PC_Byte)
+			{
+				if (UEnum* Enum = Cast<UEnum>(PinType.PinSubCategoryObject))
+				{
+					Desc.ValueType = EAttributeBagPropertyType::Enum;
+					Desc.ValueTypeObject = PinType.PinSubCategoryObject.Get();
+				}
+				else
+				{
+					Desc.ValueType = EAttributeBagPropertyType::Byte;
+					Desc.ValueTypeObject = nullptr;
+				}
+			}
+			else if (PinType.PinCategory == UEdGraphSchema_K2::PC_Int)
+			{
+				Desc.ValueType = EAttributeBagPropertyType::Int32;
+				Desc.ValueTypeObject = nullptr;
+			}
+			else if (PinType.PinCategory == UEdGraphSchema_K2::PC_Int64)
+			{
+				Desc.ValueType = EAttributeBagPropertyType::Int64;
+				Desc.ValueTypeObject = nullptr;
+			}
+			else if (PinType.PinCategory == UEdGraphSchema_K2::PC_Real)
+			{
+				if (PinType.PinSubCategory == UEdGraphSchema_K2::PC_Float)
+				{
+					Desc.ValueType = EAttributeBagPropertyType::Float;
+					Desc.ValueTypeObject = nullptr;
+				}
+				else if (PinType.PinSubCategory == UEdGraphSchema_K2::PC_Double)
+				{
+					Desc.ValueType = EAttributeBagPropertyType::Double;
+					Desc.ValueTypeObject = nullptr;
+				}
+			}
+			else if (PinType.PinCategory == UEdGraphSchema_K2::PC_Name)
+			{
+				Desc.ValueType = EAttributeBagPropertyType::Name;
+				Desc.ValueTypeObject = nullptr;
+			}
+			else if (PinType.PinCategory == UEdGraphSchema_K2::PC_String)
+			{
+				Desc.ValueType = EAttributeBagPropertyType::String;
+				Desc.ValueTypeObject = nullptr;
+			}
+			else if (PinType.PinCategory == UEdGraphSchema_K2::PC_Text)
+			{
+				Desc.ValueType = EAttributeBagPropertyType::Text;
+				Desc.ValueTypeObject = nullptr;
+			}
+			else if (PinType.PinCategory == UEdGraphSchema_K2::PC_Enum)
+			{
+				Desc.ValueType = EAttributeBagPropertyType::Enum;
+				Desc.ValueTypeObject = PinType.PinSubCategoryObject.Get();
+			}
+			else if (PinType.PinCategory == UEdGraphSchema_K2::PC_Struct)
+			{
+				Desc.ValueType = EAttributeBagPropertyType::Struct;
+				Desc.ValueTypeObject = PinType.PinSubCategoryObject.Get();
+			}
+			else if (PinType.PinCategory == UEdGraphSchema_K2::PC_Object)
+			{
+				Desc.ValueType = EAttributeBagPropertyType::Object;
+				Desc.ValueTypeObject = PinType.PinSubCategoryObject.Get();
+			}
+			else if (PinType.PinCategory == UEdGraphSchema_K2::PC_SoftObject)
+			{
+				Desc.ValueType = EAttributeBagPropertyType::SoftObject;
+				Desc.ValueTypeObject = PinType.PinSubCategoryObject.Get();
+			}
+			else if (PinType.PinCategory == UEdGraphSchema_K2::PC_Class)
+			{
+				Desc.ValueType = EAttributeBagPropertyType::Class;
+				Desc.ValueTypeObject = PinType.PinSubCategoryObject.Get();
+			}
+			else if (PinType.PinCategory == UEdGraphSchema_K2::PC_SoftClass)
+			{
+				Desc.ValueType = EAttributeBagPropertyType::SoftClass;
+				Desc.ValueTypeObject = PinType.PinSubCategoryObject.Get();
+			}
+			else
+			{
+				ensureMsgf(false, TEXT("Unhandled pin category %s"), *PinType.PinCategory.ToString());
+			}
+		}
+
+		/** Creates new property bag struct and sets all properties to use it, migrating over old values. */
+		void SetPropertyDescs(const FProperty* DynamicBagProperty, UObject* DynamicBagOwner, const TConstArrayView<FAttributeBagPropertyDesc> PropertyDescs)
+		{
+			if (ensure(IsScriptStruct<FAttributeDynamicBag>(DynamicBagProperty)))
+			{
+				// Create new bag struct
+				const UAttributeBagStruct* NewBagStruct = UAttributeBagStruct::GetOrCreateFromDescs(PropertyDescs);
+
+				// Migrate structs to the new type, copying values over.
+				if (FAttributeDynamicBag* DynamicBag = GetAttributeDynamicBagFromBagProperty(DynamicBagProperty, DynamicBagOwner))
+				{
+					DynamicBag->ResetDataStruct(NewBagStruct);
+				}
+			}
+		}
+
+		template<typename TFunc>
+		void ApplyChangesToPropertyDescs(const FText& SessionName, const FProperty* DynamicBagProperty, UObject* DynamicBagOwner, TFunc&& Function)
+		{
+			if (!IsValid(DynamicBagOwner) || !IsScriptStruct<FAttributeDynamicBag>(DynamicBagProperty))
+			{
+				return;
+			}
+
+			FScopedTransaction Transaction(SessionName);
+			TArray<FAttributeBagPropertyDesc> PropertyDescs = GetDynamicPropertyDescs(DynamicBagProperty, DynamicBagOwner);
+
+			Function(PropertyDescs);
+
+			SetPropertyDescs(DynamicBagProperty, DynamicBagOwner, PropertyDescs);
+		}
+
+	}
+
+
+	/** @return true of the property name is not used yet by the property bag structure common to all edited properties. */
+	bool IsUniqueName(const FName NewName, const FName OldName, const FProperty* StructProperty, UObject* BagOwner)
+	{
+		if (NewName == OldName)
+		{
+			return false;
+		}
+
+		if (const UScriptStruct* BagStruct = GetCommonBagStruct(StructProperty, BagOwner))
+		{
+			for (TFieldIterator<FProperty> PropIt(BagStruct); PropIt; ++PropIt)
+			{
+				FProperty* Property = *PropIt;
+				if (NewName == Property->GetFName())
+				{
+					return false;
+				}
+			}
+		}
+
+		return true;
+	}
+
+	/** @return Blueprint pin type from property descriptor. */
+	FEdGraphPinType GetPropertyCommonAsPin(const FProperty* Property)
+	{
+		// @TODO: 开销有点大？
+		FAttributeBagPropertyDesc Desc(Property->GetFName(), Property);
+
+		return DynamicBag::GetPropertyDescAsPin(Desc);
+	}
+
 }
 
 //////////////////////////////////////////////////////////////////////////
 // FAttributeDetailsNode
-FAttributeDetailsNode::FAttributeDetailsNode(FText& InName)
-	: NodeType(EAttributeDetailsNodeType::None)
-	, Index(-1)
-	, Owner(nullptr)
-	, Name(InName)
-	, AttributeDesc(nullptr)
+FAttributeDetailsNode::FAttributeDetailsNode(FAttributeBag& AttributeBag, int32 InPropIndex, const FText& InDisplayName, UObject* InPropertyOuter, FProperty* InProperty, TSharedRef<FAttributeDetailsViewModel> InViewModel)
+	: UID(AttributeBag.GetUID()), PropIndex(InPropIndex), DisplayName(InDisplayName), PropertyOuter(InPropertyOuter), Property(InProperty), ViewModel(InViewModel.ToWeakPtr())
 {
-
+	
 }
 
-FAttributeDetailsNode::FAttributeDetailsNode(const FAttributeBagPropertyDesc* InAttributeDesc)
-	: NodeType(EAttributeDetailsNodeType::AttributeNode)
-	, Index(-1)
-	, Owner(nullptr)
-	, AttributeDesc(InAttributeDesc)
+void FAttributeDetailsNode::GenerateAttributeChildren(FAttributeBag& AttributeBag)
 {
+	int32 NodeIndex = 0;
+	for (TFieldIterator<FProperty> PropIt(AttributeBag.GetScriptStruct()); PropIt; ++PropIt)
+	{
+		FProperty* ChlidProp = *PropIt;
 
+		// 不允许嵌套
+		if (FStructProperty* StructProperty = CastField<FStructProperty>(ChlidProp))
+		{
+			ensureAlwaysMsgf(StructProperty->Struct->IsChildOf(FAttributeBag::StaticStruct()), TEXT("AttributeBag nesting is forbidden!!!"));
+			return;
+		}
+
+		FText ChildNodeName = ChlidProp->GetDisplayNameText();
+
+		TSharedPtr<FAttributeDetailsNode> ChildNode = MakeShared<FAttributeDetailsNode>(AttributeBag, NodeIndex++, ChildNodeName, PropertyOuter, ChlidProp, ViewModel.Pin().ToSharedRef());
+
+		ChildNode->Parent = SharedThis(this);
+
+		Children.Add(ChildNode);
+	}
+
+	FStructProperty* StructProperty = CastField<FStructProperty>(Property);
+	if (!StructProperty || !StructProperty->Struct->IsChildOf(FAttributeDynamicBag::StaticStruct()))
+	{
+		// 如果是DynamicBag，允许创建 AddWidget
+		SAssignNew(ValueOverride, SHorizontalBox)
+		+ SHorizontalBox::Slot()
+		.VAlign(VAlign_Center)
+		.AutoWidth()
+		[
+			SNew(SButton)
+			.VAlign(VAlign_Center)
+			.HAlign(HAlign_Center)
+			.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+			.ToolTipText(LOCTEXT("AddAttribute_Tooltip", "Add new attribute"))
+			.OnClicked_Lambda([StructProperty, DynamicBagOuter = PropertyOuter, this]()
+			{
+				if (!IsDataValid())
+				{
+					return FReply::Handled();
+				}
+				constexpr int32 MaxIterations = 100;
+				FName NewName(TEXT("NewAttribute"));
+				int32 Number = 1;
+				while (!Attribute::IsUniqueName(NewName, FName(), StructProperty, DynamicBagOuter) && Number < MaxIterations)
+				{
+					Number++;
+					NewName.SetNumber(Number);
+				}
+				if (Number == MaxIterations)
+				{
+					return FReply::Handled();
+				}
+
+				Attribute::DynamicBag::ApplyChangesToPropertyDescs(
+					LOCTEXT("OnPropertyAdded", "Add Property"), StructProperty, DynamicBagOuter,
+					[&NewName](TArray<FAttributeBagPropertyDesc>& PropertyDescs)
+					{
+						PropertyDescs.Emplace(NewName, EAttributeBagPropertyType::Bool, nullptr, PropertyDescs.Num());
+					});
+
+				// 重新构建TreeView，否则会有异常
+				ViewModel.Pin()->OnUpdateDetails.Broadcast();
+				return FReply::Handled();
+			})
+			.Content()
+			[
+				SNew(SImage)
+				.Image(FAppStyle::GetBrush("Icons.PlusCircle"))
+				.ColorAndOpacity(FSlateColor::UseForeground())
+			]
+		];
+	}
 }
 
-TSharedPtr<FAttributeDetailsNode> FAttributeDetailsNode::CreateCategoryNode(FText& InCategory)
+bool FAttributeDetailsNode::IsDataValid() const
 {
-	TSharedPtr<FAttributeDetailsNode> CategoryNode = MakeShared<FAttributeDetailsNode>(InCategory);
-	CategoryNode->NodeType = EAttributeDetailsNodeType::CategoryNode;
-	return CategoryNode;
+	return PropIndex != INDEX_NONE
+		&& IsValid(PropertyOuter) 
+		&& Property
+		&& ViewModel.IsValid();
 }
 
-TSharedPtr<FAttributeDetailsNode> FAttributeDetailsNode::CreateAttributeNode(const FAttributeBagPropertyDesc* InAttributeDesc)
+TSharedPtr<FAttributeDetailsNode> FAttributeDetailsNode::GetParentNode()
 {
-	TSharedPtr<FAttributeDetailsNode> AttributeNode = MakeShared<FAttributeDetailsNode>(InAttributeDesc);
-	AttributeNode->Name = FText::FromName(InAttributeDesc->Name);
-	return AttributeNode;
+	return Parent;
+}
+
+TSharedPtr<FAttributeDetailsNode> FAttributeDetailsNode::GetOutermostNode()
+{
+	if (!Parent.IsValid())
+	{
+		return SharedThis(this);
+	}
+	else
+	{
+		return Parent->GetOutermostNode();
+	}
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -674,17 +798,9 @@ void SAttributeDetailsView::Construct(const FArguments& InArgs)
 		.AllowOverscroll(EAllowOverscroll::No)
 		.ExternalScrollbar(VerticalScrollBar);
 
-	AddAttributeWidget = SNew(SHorizontalBox);
-
 	ChildSlot
 		[
 			SNew(SVerticalBox)
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			.Padding(0.0f)
-			[
-				AddAttributeWidget.ToSharedRef()
-			]
 			+ SVerticalBox::Slot()
 			.FillHeight(1.0f)
 			.Padding(0.0f)
@@ -709,28 +825,33 @@ void SAttributeDetailsView::Construct(const FArguments& InArgs)
 void SAttributeDetailsView::SetObject(UObject* InSelection)
 {
 	AttributeBagOwner = InSelection;
-	AttributeBag = nullptr;
 	TreeRoots.Empty();
 	
 	if (IsValid(InSelection))
 	{
-		BagStructProperty = InSelection->GetClass()->FindPropertyByName(TEXT("AttributeBag"));
-		AttributeBag = State::StructUtils::GetAttributeBagFromBagProperty(BagStructProperty, InSelection);
-		if (AttributeBag && AttributeBag->IsValid())
+		int32 RootNodeIndex = 0;
+		for (TFieldIterator<FProperty> PropIt(InSelection->GetClass()); PropIt; ++PropIt)
 		{
-			const UStateAttributeBag* AttributeBagStruct = AttributeBag->GetAttributeBagStruct();
-			TConstArrayView<FAttributeBagPropertyDesc> ArrayView = AttributeBagStruct->GetPropertyDescs();
-			for (const FAttributeBagPropertyDesc* It = ArrayView.begin(); It < ArrayView.end(); ++It)
+			FProperty* Property = *PropIt;
+			FStructProperty* StructProperty = CastField<FStructProperty>(Property);
+
+			if (!StructProperty || !StructProperty->Struct->IsChildOf(FAttributeBag::StaticStruct()))
 			{
-				TreeRoots.Add(FAttributeDetailsNode::CreateAttributeNode(It));
-				TreeRoots.Last()->Index = ArrayView.end() - It;
-				TreeRoots.Last()->Owner = InSelection;
+				continue;
 			}
+
+			FText RootName = Property->GetDisplayNameText();
+			
+			FAttributeBag* AttributeBag = StructProperty->ContainerPtrToValuePtr<FAttributeBag>(InSelection);
+
+			TSharedPtr<FAttributeDetailsNode> RootNode = MakeShared<FAttributeDetailsNode>(*AttributeBag, RootNodeIndex++, RootName, InSelection, Property, ViewModel.ToSharedRef());
+			RootNode->GenerateAttributeChildren(*AttributeBag);
+
+			TreeRoots.Add(RootNode);
 		}
 	}
 
 	TreeViewWidget->RequestTreeRefresh();
-	GenerateAddAttributeWidget();
 }
 
 void SAttributeDetailsView::UpdateDetails()
@@ -741,189 +862,29 @@ void SAttributeDetailsView::UpdateDetails()
 	}
 }
 
-void SAttributeDetailsView::GenerateAddAttributeWidget()
-{
-	AddAttributeWidget->ClearChildren();
-
-	if (!BagStructProperty || !AttributeBagOwner.IsValid())
-	{
-		return;
-	}
-
-	AddAttributeWidget->AddSlot()
-	.VAlign(VAlign_Center)
-	.AutoWidth()
-	[
-		SNew(SButton)
-			.VAlign(VAlign_Center)
-			.HAlign(HAlign_Center)
-			.ButtonStyle(FAppStyle::Get(), "SimpleButton")
-			.ToolTipText(LOCTEXT("AddAttribute_Tooltip", "Add new attribute"))
-			.OnClicked_Lambda([StructProperty = BagStructProperty, BagOwner = AttributeBagOwner.Get(), this]()
-				{
-					constexpr int32 MaxIterations = 100;
-					FName NewName(TEXT("NewAttribute"));
-					int32 Number = 1;
-					while (!State::StructUtils::IsUniqueName(NewName, FName(), StructProperty, BagOwner) && Number < MaxIterations)
-					{
-						Number++;
-						NewName.SetNumber(Number);
-					}
-					if (Number == MaxIterations)
-					{
-						return FReply::Handled();
-					}
-
-					State::StructUtils::ApplyChangesToPropertyDescs(
-						LOCTEXT("OnPropertyAdded", "Add Property"), StructProperty, BagOwner,
-						[&NewName](TArray<FAttributeBagPropertyDesc>& PropertyDescs)
-						{
-							PropertyDescs.Emplace(NewName, EAttributeBagPropertyType::Bool, nullptr, PropertyDescs.Num());
-						});
-
-					// 重新构建TreeView，否则会有异常
-					UpdateDetails();
-					return FReply::Handled();
-				})
-			.Content()
-			[
-				SNew(SImage)
-				.Image(FAppStyle::GetBrush("Icons.PlusCircle"))
-				.ColorAndOpacity(FSlateColor::UseForeground())
-			]
-	];
-}
-
 TSharedRef<ITableRow> SAttributeDetailsView::OnGenerateRow(TSharedPtr<FAttributeDetailsNode> InNode, const TSharedRef<STableViewBase>& InOwnerTableView)
 {
-	return SNew(SAttributeDetailsViewRow, InOwnerTableView, InNode, BagStructProperty, ViewModel);
+	return SNew(SAttributeDetailsViewRow, InOwnerTableView, InNode.ToSharedRef(), ViewModel);
 }
 
 void SAttributeDetailsView::OnGetChildren(TSharedPtr<FAttributeDetailsNode> InParent, TArray<TSharedPtr<FAttributeDetailsNode>>& OutChildren)
 {
-	if (InParent->NodeType == EAttributeDetailsNodeType::CategoryNode)
-	{
-		OutChildren = { InParent };
-	}
+	OutChildren = InParent->Children;
 }
 
 
 //////////////////////////////////////////////////////////////////////////
 // SAttributeDetailsViewRow
-void SAttributeDetailsViewRow::Construct(const FArguments& InArgs, const TSharedRef<STableViewBase>& InOwnerTableView, TSharedPtr<FAttributeDetailsNode> InNode, const FProperty* BagStructProperty, TSharedPtr<FAttributeDetailsViewModel> InViewModel)
+void SAttributeDetailsViewRow::Construct(const FArguments& InArgs, const TSharedRef<STableViewBase>& InOwnerTableView, TSharedRef<FAttributeDetailsNode> InNode, TWeakPtr<FAttributeDetailsViewModel> InViewModel)
 {
 	ViewModel = InViewModel;
 	Node = InNode;
 
-	const FProperty* AttibuteProperty = InNode->AttributeDesc->CachedProperty;
-	UObject* Owner = InNode->Owner;
+	TSharedPtr<FAttributeDetailsNode> OutermostNode = Node->GetOutermostNode();
 
-	auto GetFilteredVariableTypeTree = [BagStructProperty = BagStructProperty, Owner](TArray<TSharedPtr<UEdGraphSchema_K2::FPinTypeTreeInfo>>& TypeTree, ETypeTreeFilter TypeTreeFilter)
-		{
-			// The SPinTypeSelector popup might outlive this details view, so bag struct property can be invalid here.
-			if (!BagStructProperty || !IsValid(Owner))
-			{
-				return;
-			}
+	bool bReadOnly = !(Attribute::IsScriptStruct<FAttributeDynamicBag>(OutermostNode->Property));
 
-			UFunction* IsPinTypeAcceptedFunc = nullptr;
-			UObject* IsPinTypeAcceptedTarget = nullptr;
-			if (State::StructUtils::FindUserFunction(BagStructProperty, UE::StructUtils::Metadata::IsPinTypeAcceptedName, IsPinTypeAcceptedFunc, IsPinTypeAcceptedTarget))
-			{
-				check(IsPinTypeAcceptedFunc && IsPinTypeAcceptedTarget);
-
-				// We need to make sure the signature matches perfectly: bool(FEdGraphPinType)
-				bool bFuncIsValid = State::StructUtils::ValidateFunctionSignature<bool, FEdGraphPinType>(IsPinTypeAcceptedFunc);
-				if (!ensureMsgf(bFuncIsValid, TEXT("[%s] Function %s does not have the right signature."), *UE::StructUtils::Metadata::IsPinTypeAcceptedName.ToString(), *IsPinTypeAcceptedFunc->GetName()))
-				{
-					return;
-				}
-			}
-
-			auto IsPinTypeAccepted = [IsPinTypeAcceptedFunc, IsPinTypeAcceptedTarget](const FEdGraphPinType& InPinType) -> bool
-				{
-					if (IsPinTypeAcceptedFunc && IsPinTypeAcceptedTarget)
-					{
-						const TValueOrError<bool, void> bIsValid = State::StructUtils::CallFunc<bool>(IsPinTypeAcceptedTarget, IsPinTypeAcceptedFunc, InPinType);
-						return bIsValid.HasValue() && bIsValid.GetValue();
-					}
-					else
-					{
-						return true;
-					}
-				};
-
-			check(GetDefault<UEdGraphSchema_K2>());
-			TArray<TSharedPtr<UEdGraphSchema_K2::FPinTypeTreeInfo>> TempTypeTree;
-			GetDefault<UAttributeBagSchema>()->GetVariableTypeTree(TempTypeTree, TypeTreeFilter);
-
-			// Filter
-			for (TSharedPtr<UEdGraphSchema_K2::FPinTypeTreeInfo>& PinType : TempTypeTree)
-			{
-				if (!PinType.IsValid() || !IsPinTypeAccepted(PinType->GetPinType(/*bForceLoadSubCategoryObject*/false)))
-				{
-					continue;
-				}
-
-				for (int32 ChildIndex = 0; ChildIndex < PinType->Children.Num(); )
-				{
-					TSharedPtr<UEdGraphSchema_K2::FPinTypeTreeInfo> Child = PinType->Children[ChildIndex];
-					if (Child.IsValid())
-					{
-						const FEdGraphPinType& ChildPinType = Child->GetPinType(/*bForceLoadSubCategoryObject*/false);
-
-						if (!State::StructUtils::CanHaveMemberVariableOfType(ChildPinType) || !IsPinTypeAccepted(ChildPinType))
-						{
-							PinType->Children.RemoveAt(ChildIndex);
-							continue;
-						}
-					}
-					++ChildIndex;
-				}
-
-				TypeTree.Add(PinType);
-			}
-		};
-
-	auto GetPinInfo = [BagStructProperty = BagStructProperty, Owner, AttibuteProperty]()
-		{
-			// The SPinTypeSelector popup might outlive this details view, so bag struct property can be invalid here.
-			if (!BagStructProperty || !AttibuteProperty || !IsValid(Owner))
-			{
-				return FEdGraphPinType();
-			}
-
-			TArray<FAttributeBagPropertyDesc> AttributeDescs = State::StructUtils::GetCommonPropertyDescs(BagStructProperty, Owner);
-
-			if (FAttributeBagPropertyDesc* Desc = AttributeDescs.FindByPredicate([AttibuteProperty](const FAttributeBagPropertyDesc& Desc) { return Desc.CachedProperty == AttibuteProperty; }))
-			{
-				return State::StructUtils::GetPropertyDescAsPin(*Desc);
-			}
-
-			return FEdGraphPinType();
-		};
-
-	auto PinInfoChanged = [ViewModel = ViewModel, BagStructProperty = BagStructProperty, Owner, AttibuteProperty](const FEdGraphPinType& PinType)
-		{
-			// The SPinTypeSelector popup might outlive this details view, so bag struct property can be invalid here.
-			if (!BagStructProperty || !AttibuteProperty || !IsValid(Owner))
-			{
-				return;
-			}
-
-			State::StructUtils::ApplyChangesToPropertyDescs(
-				LOCTEXT("OnPropertyTypeChanged", "Change Property Type"), BagStructProperty, Owner,
-				[&PinType, &AttibuteProperty](TArray<FAttributeBagPropertyDesc>& PropertyDescs)
-				{
-					// Find and change struct type
-					if (FAttributeBagPropertyDesc* Desc = PropertyDescs.FindByPredicate([Property = AttibuteProperty](const FAttributeBagPropertyDesc& Desc) { return Desc.CachedProperty == Property; }))
-					{
-						State::StructUtils::SetPropertyDescFromPin(*Desc, PinType);
-					}
-				});
-
-			ViewModel->OnPinInfoChanged.Broadcast();
-		};
+	TWeakPtr<SAttributeDetailsViewRow> WeakViewRow = SharedThis(this).ToWeakPtr();
 
 	ConstructInternal(STableRow::FArguments()
 		.Padding(5.0f)
@@ -957,42 +918,51 @@ void SAttributeDetailsViewRow::Construct(const FArguments& InArgs, const TShared
 			.Text(this, &SAttributeDetailsViewRow::GetAttributeName)
 			.MultiLine(false)
 			.Clipping(EWidgetClipping::ClipToBounds)
-			.IsReadOnly(Node->AttributeDesc->HasAnyFlags(EAttributeFlags::AF_ReadOnly))
-			.IsSelected_Lambda([Node = Node](){
-				if (!Node->AttributeDesc->HasAnyFlags(EAttributeFlags::AF_ReadOnly))
+			.IsReadOnly(bReadOnly)
+			.IsSelected_Lambda([bReadOnly]() {
+				return !bReadOnly;
+			})// 在TreeView内TextBlock会失去焦点，所以只能用这种方式
+			.OnVerifyTextChanged_Lambda([Node = Node](const FText& InText, FText& OutErrorMessage)
 				{
-					// 在TreeView内TextBlock会失去焦点，所以只能用这种方式
-					return true;
-				}
-				return false;
-			})
-			.OnVerifyTextChanged_Lambda([BagStructProperty = BagStructProperty, Owner, AttibuteProperty](const FText& InText, FText& OutErrorMessage)
-				{
-					const FName NewName = State::StructUtils::GetValidPropertyName(InText.ToString());
-					const FName OldName = AttibuteProperty->GetFName();
-					bool bResult = State::StructUtils::IsUniqueName(NewName, OldName, BagStructProperty, Owner);
+					if (!Node->IsDataValid())
+					{
+						return false;
+					}
+
+					const FName NewName = Attribute::GetValidPropertyName(InText.ToString());
+					const FName OldName = Node->Property->GetFName();
+					TSharedPtr<FAttributeDetailsNode> OutermostNode = Node->GetOutermostNode();
+
+					bool bResult = Attribute::IsUniqueName(NewName, OldName, OutermostNode->Property, Node->PropertyOuter);
 					if (!bResult)
 					{
 						OutErrorMessage = LOCTEXT("MustBeUniqueName", "Attribute must have unique name");
 					}
 					return bResult;
 				})
-			.OnTextCommitted_Lambda([BagStructProperty = BagStructProperty, Owner, AttibuteProperty, ViewModel = ViewModel](const FText& InNewText, ETextCommit::Type InCommitType)
+			.OnTextCommitted_Lambda([Node = Node, ViewModel = ViewModel](const FText& InNewText, ETextCommit::Type InCommitType)
 				{
+					if (!Node->IsDataValid())
+					{
+						return;
+					}
+
 					if (InCommitType == ETextCommit::OnCleared)
 					{
 						return;
 					}
 
-					const FName NewName = State::StructUtils::GetValidPropertyName(InNewText.ToString());
-					const FName OldName = AttibuteProperty->GetFName();
-					if (!State::StructUtils::IsUniqueName(NewName, OldName, BagStructProperty, Owner))
+					const FName NewName = Attribute::GetValidPropertyName(InNewText.ToString());
+					const FName OldName = Node->Property->GetFName();
+					TSharedPtr<FAttributeDetailsNode> OutermostNode = Node->GetOutermostNode();
+
+					if (!Attribute::IsUniqueName(NewName, OldName, OutermostNode->Property, OutermostNode->PropertyOuter))
 					{
 						return;
 					}
 
-					State::StructUtils::ApplyChangesToPropertyDescs(
-						LOCTEXT("OnAttributeNameChanged", "Change Attribute Name"), BagStructProperty, Owner,
+					Attribute::DynamicBag::ApplyChangesToPropertyDescs(
+						LOCTEXT("OnAttributeNameChanged", "Change Attribute Name"), OutermostNode->Property, Node->PropertyOuter,
 						[&NewName, &OldName](TArray<FAttributeBagPropertyDesc>& PropertyDescs)
 						{
 							if (FAttributeBagPropertyDesc* Desc = PropertyDescs.FindByPredicate([OldName = OldName](const FAttributeBagPropertyDesc& Desc) { return Desc.Name == OldName; }))
@@ -1002,7 +972,7 @@ void SAttributeDetailsViewRow::Construct(const FArguments& InArgs, const TShared
 						});
 
 					// 重新构建TreeView，否则会有异常
-					ViewModel->OnPinInfoChanged.Broadcast();
+					ViewModel.Pin()->OnPinInfoChanged.Broadcast();
 				})
 		]
 		+ SHorizontalBox::Slot()
@@ -1010,21 +980,141 @@ void SAttributeDetailsViewRow::Construct(const FArguments& InArgs, const TShared
 		.HAlign(HAlign_Left)
 		.FillWidth(0.5f)
 		[
-			SAssignNew(PinTypeSelector, SPinTypeSelector, FGetPinTypeTree::CreateLambda(GetFilteredVariableTypeTree))
-			.TargetPinType_Lambda(GetPinInfo)
-			.OnPinTypeChanged_Lambda(PinInfoChanged)
+			SAssignNew(PinTypeSelector, SPinTypeSelector, FGetPinTypeTree::CreateSP(this, &SAttributeDetailsViewRow::GetFilteredVariableTypeTree))
+			.TargetPinType_Lambda([WeakViewRow]() {
+				if (WeakViewRow.IsValid())
+				{
+					return WeakViewRow.Pin()->GetPinInfo();
+				}
+				return FEdGraphPinType();
+			})
+			.OnPinTypeChanged_Lambda([WeakViewRow](const FEdGraphPinType& PinType) {
+				if (WeakViewRow.IsValid())
+				{
+					return WeakViewRow.Pin()->PinInfoChanged(PinType);
+				}
+			})
 			.Schema(GetDefault<UAttributeBagSchema>())
 			.bAllowArrays(true)
 			.TypeTreeFilter(ETypeTreeFilter::None)
 			.Font(IDetailLayoutBuilder::GetDetailFont())
-			.ReadOnly(Node->AttributeDesc->HasAnyFlags(EAttributeFlags::AF_ReadOnly))
+			.ReadOnly(bReadOnly)
 		]
 	];
 }
 
 FText SAttributeDetailsViewRow::GetAttributeName() const
 {
-	return Node->Name;
+	return Node->DisplayName;
+}
+
+void SAttributeDetailsViewRow::GetFilteredVariableTypeTree(TArray<TSharedPtr<class UEdGraphSchema_K2::FPinTypeTreeInfo>>& TypeTree, ETypeTreeFilter TypeTreeFilter)
+{
+	// The SPinTypeSelector popup might outlive this details view, so bag struct property can be invalid here.
+	if (!Node->IsDataValid())
+	{
+		return;
+	}
+
+	TSharedPtr<FAttributeDetailsNode> OutermostNode = Node->GetOutermostNode();
+
+	UFunction* IsPinTypeAcceptedFunc = nullptr;
+	UObject* IsPinTypeAcceptedTarget = nullptr;
+	if (Attribute::FindUserFunction(OutermostNode->Property, UE::StructUtils::Metadata::IsPinTypeAcceptedName, IsPinTypeAcceptedFunc, IsPinTypeAcceptedTarget))
+	{
+		check(IsPinTypeAcceptedFunc && IsPinTypeAcceptedTarget);
+
+		// We need to make sure the signature matches perfectly: bool(FEdGraphPinType)
+		bool bFuncIsValid = Attribute::ValidateFunctionSignature<bool, FEdGraphPinType>(IsPinTypeAcceptedFunc);
+		if (!ensureMsgf(bFuncIsValid, TEXT("[%s] Function %s does not have the right signature."), *UE::StructUtils::Metadata::IsPinTypeAcceptedName.ToString(), *IsPinTypeAcceptedFunc->GetName()))
+		{
+			return;
+		}
+	}
+
+	auto IsPinTypeAccepted = [IsPinTypeAcceptedFunc, IsPinTypeAcceptedTarget](const FEdGraphPinType& InPinType) -> bool
+		{
+			if (IsPinTypeAcceptedFunc && IsPinTypeAcceptedTarget)
+			{
+				const TValueOrError<bool, void> bIsValid = Attribute::CallFunc<bool>(IsPinTypeAcceptedTarget, IsPinTypeAcceptedFunc, InPinType);
+				return bIsValid.HasValue() && bIsValid.GetValue();
+			}
+			else
+			{
+				return true;
+			}
+		};
+
+	check(GetDefault<UEdGraphSchema_K2>());
+	TArray<TSharedPtr<UEdGraphSchema_K2::FPinTypeTreeInfo>> TempTypeTree;
+	GetDefault<UAttributeBagSchema>()->GetVariableTypeTree(TempTypeTree, TypeTreeFilter);
+
+	// Filter
+	for (TSharedPtr<UEdGraphSchema_K2::FPinTypeTreeInfo>& PinType : TempTypeTree)
+	{
+		if (!PinType.IsValid() || !IsPinTypeAccepted(PinType->GetPinType(/*bForceLoadSubCategoryObject*/false)))
+		{
+			continue;
+		}
+
+		for (int32 ChildIndex = 0; ChildIndex < PinType->Children.Num(); )
+		{
+			TSharedPtr<UEdGraphSchema_K2::FPinTypeTreeInfo> Child = PinType->Children[ChildIndex];
+			if (Child.IsValid())
+			{
+				const FEdGraphPinType& ChildPinType = Child->GetPinType(/*bForceLoadSubCategoryObject*/false);
+
+				if (!Attribute::CanHaveMemberVariableOfType(ChildPinType) || !IsPinTypeAccepted(ChildPinType))
+				{
+					PinType->Children.RemoveAt(ChildIndex);
+					continue;
+				}
+			}
+			++ChildIndex;
+		}
+
+		TypeTree.Add(PinType);
+	}
+}
+
+FEdGraphPinType SAttributeDetailsViewRow::GetPinInfo()
+{
+	// The SPinTypeSelector popup might outlive this details view, so bag struct property can be invalid here.
+	if (!Node->IsDataValid())
+	{
+		return FEdGraphPinType();
+	}
+
+	return Attribute::GetPropertyCommonAsPin(Node->Property);
+}
+
+void SAttributeDetailsViewRow::PinInfoChanged(const FEdGraphPinType& PinType)
+{
+	// The SPinTypeSelector popup might outlive this details view, so bag struct property can be invalid here.
+	if (!Node->IsDataValid())
+	{
+		return;
+	}
+
+	TSharedPtr<FAttributeDetailsNode> OutermostNode = Node->GetOutermostNode();
+
+	Attribute::DynamicBag::ApplyChangesToPropertyDescs(
+		LOCTEXT("OnPropertyTypeChanged", "Change Property Type"), OutermostNode->Property, OutermostNode->PropertyOuter,
+		[&PinType, OutermostNode](TArray<FAttributeBagPropertyDesc>& PropertyDescs)
+		{
+			if (!OutermostNode->IsDataValid())
+			{
+				return;
+			}
+
+			// Find and change struct type
+			if (FAttributeBagPropertyDesc* Desc = PropertyDescs.FindByPredicate([Property = OutermostNode->Property](const FAttributeBagPropertyDesc& Desc) { return Desc.CachedProperty == Property; }))
+			{
+				Attribute::DynamicBag::SetPropertyDescFromPin(*Desc, PinType);
+			}
+		});
+
+	ViewModel.Pin()->OnPinInfoChanged.Broadcast();
 }
 
 #undef LOCTEXT_NAMESPACE

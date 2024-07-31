@@ -265,7 +265,7 @@ struct FAttributeBagPropertyDescMetaData
 };
 
 USTRUCT()
-struct FAttributeBagPropertyDesc
+struct STATEABILITYSCRIPTRUNTIME_API FAttributeBagPropertyDesc
 {
 	GENERATED_BODY()
 
@@ -462,4 +462,161 @@ EAttributeBagResult Attribute::StructUtils::GetPropertyValue(const FAttributeBag
 	OutValue = Property->GetPropertyValue(Address);
 
 	return EAttributeBagResult::Success;
+};
+
+// TFieldIterator 的访问顺序是从子类往基类遍历。
+// TFieldIteratorFromBaseStruct 则是从基类往子类遍历。
+template <class T>
+class TFieldIteratorFromBaseStruct
+{
+private:
+	/** The object being searched for the specified field */
+	const UStruct* Struct;
+
+	int32 StructDepth = 0;
+
+	/** The current location in the list of fields being iterated */
+	typename T::BaseFieldClass* Field;
+	/** The index of the current interface being iterated */
+	int32 InterfaceIndex;
+	/** Whether to include the super class or not */
+	const bool bIncludeSuper;
+	/** Whether to include deprecated fields or not */
+	const bool bIncludeDeprecated;
+	/** Whether to include interface fields or not */
+	const bool bIncludeInterface;
+
+public:
+	TFieldIteratorFromBaseStruct(const UStruct* InStruct, EFieldIterationFlags InIterationFlags = EFieldIterationFlags::Default)
+		: Struct(InStruct)
+		, Field(nullptr)
+		, InterfaceIndex(-1)
+		, bIncludeSuper(EnumHasAnyFlags(InIterationFlags, EFieldIterationFlags::IncludeSuper))
+		, bIncludeDeprecated(EnumHasAnyFlags(InIterationFlags, EFieldIterationFlags::IncludeDeprecated))
+		, bIncludeInterface(EnumHasAnyFlags(InIterationFlags, EFieldIterationFlags::IncludeInterfaces) && InStruct&& InStruct->IsA(UClass::StaticClass()))
+	{
+		const UStruct* CurrentStruct = Struct;
+
+		while (CurrentStruct)
+		{
+			StructLink.Add(CurrentStruct);
+			CurrentStruct = CurrentStruct->GetInheritanceSuper();
+		}
+
+		StructDepth = StructLink.Num() - 1;
+
+		Field = GetChildFieldsFromStruct<typename T::BaseFieldClass>(StructLink[StructDepth]);
+
+		IterateToNext();
+	}
+
+	/** Legacy version taking the flags as 3 separate values */
+	TFieldIteratorFromBaseStruct(const UStruct* InStruct,
+		EFieldIteratorFlags::SuperClassFlags         InSuperClassFlags,
+		EFieldIteratorFlags::DeprecatedPropertyFlags InDeprecatedFieldFlags = EFieldIteratorFlags::IncludeDeprecated,
+		EFieldIteratorFlags::InterfaceClassFlags     InInterfaceFieldFlags = EFieldIteratorFlags::ExcludeInterfaces)
+		: TFieldIteratorFromBaseStruct(InStruct, (EFieldIterationFlags)(InSuperClassFlags | InDeprecatedFieldFlags | InInterfaceFieldFlags))
+	{
+	}
+
+	/** conversion to "bool" returning true if the iterator is valid. */
+	FORCEINLINE explicit operator bool() const
+	{
+		return Field != NULL;
+	}
+	/** inverse of the "bool" operator */
+	FORCEINLINE bool operator !() const
+	{
+		return !(bool)*this;
+	}
+
+	inline bool operator==(const TFieldIteratorFromBaseStruct<T>& Rhs) const { return Field == Rhs.Field; }
+	inline bool operator!=(const TFieldIteratorFromBaseStruct<T>& Rhs) const { return Field != Rhs.Field; }
+
+	inline void operator++()
+	{
+		checkSlow(Field);
+		Field = Field->Next;
+		IterateToNext();
+	}
+	inline T* operator*()
+	{
+		checkSlow(Field);
+		return (T*)Field;
+	}
+	inline const T* operator*() const
+	{
+		checkSlow(Field);
+		return (const T*)Field;
+	}
+	inline T* operator->()
+	{
+		checkSlow(Field);
+		return (T*)Field;
+	}
+	inline const UStruct* GetStruct()
+	{
+		return Struct;
+	}
+protected:
+	TArray<const UStruct*> StructLink;
+
+	inline void IterateToNext()
+	{
+		typename T::BaseFieldClass* CurrentField = Field;
+		const UStruct* CurrentStruct = StructLink[StructDepth];
+
+		while (CurrentStruct)
+		{
+			while (CurrentField)
+			{
+				typename T::FieldTypeClass* FieldClass = CurrentField->GetClass();
+
+				if (FieldClass->HasAllCastFlags(T::StaticClassCastFlags()) &&
+					(
+						bIncludeDeprecated
+						|| !FieldClass->HasAllCastFlags(CASTCLASS_FProperty)
+						|| !((FProperty*)CurrentField)->HasAllPropertyFlags(CPF_Deprecated)
+						)
+					)
+				{
+					Struct = CurrentStruct;
+					Field = CurrentField;
+					return;
+				}
+
+				CurrentField = CurrentField->Next;
+			}
+
+			if (bIncludeInterface)
+			{
+				// We shouldn't be able to get here for non-classes
+				UClass* CurrentClass = (UClass*)CurrentStruct;
+				++InterfaceIndex;
+				if (InterfaceIndex < CurrentClass->Interfaces.Num())
+				{
+					FImplementedInterface& Interface = CurrentClass->Interfaces[InterfaceIndex];
+					CurrentField = Interface.Class ? GetChildFieldsFromStruct<typename T::BaseFieldClass>(Interface.Class) : nullptr;
+					continue;
+				}
+			}
+
+			if (bIncludeSuper)
+			{
+				--StructDepth;
+				if (StructDepth >= 0)
+				{
+					CurrentStruct = StructLink[StructDepth];
+					CurrentField = GetChildFieldsFromStruct<typename T::BaseFieldClass>(CurrentStruct);
+					InterfaceIndex = -1;
+					continue;
+				}
+			}
+
+			break;
+		}
+
+		Struct = CurrentStruct;
+		Field = CurrentField;
+	}
 };

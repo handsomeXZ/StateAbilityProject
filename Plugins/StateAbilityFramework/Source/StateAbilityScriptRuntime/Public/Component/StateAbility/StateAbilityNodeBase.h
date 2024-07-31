@@ -53,7 +53,7 @@ public:
 	 */
 	UPROPERTY(VisibleAnywhere, Category = "一般")
 	uint32 UniqueID;
-	UPROPERTY(EditAnywhere, Category = "Static Data")
+	UPROPERTY(EditAnywhere, Category = "Static Data", meta = (MetaFromOuter))
 	FConfigVarsBag ConfigVarsBag;
 
 	// 支持动态添加EventSlot

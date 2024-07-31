@@ -2,8 +2,6 @@
 
 #include "Component/StateAbility/Script/StateAbilityScript.h"
 
-#define INHERITS_PROP_META(PropName, MetaName) if (GetClass()->HasMetaData(MetaName)) {	\
-	GetClass()->FindPropertyByName(PropName)->SetMetaData(MetaName, *(GetClass()->GetMetaData(MetaName))); }	\
 
 const FName UStateAbilityNodeBase::ConfigVarsBagName = TEXT("ConfigVarsBag");
 const FName UStateAbilityNodeBase::DynamicEventSlotBagName = TEXT("DynamicEventSlotBag");
@@ -11,6 +9,7 @@ const FName UStateAbilityNodeBase::DynamicEventSlotBagName = TEXT("DynamicEventS
 static const FName NAME_DataStruct = "DataStruct";
 static const FName NAME_InheritedStruct = "InheritedDataStruct";
 static const FName NAME_ConfigVarsIcon = "ConfigVarsIcon";
+static const FName NAME_MetaFromOuter = "MetaFromOuter";
 
 UStateAbilityNodeBase::UStateAbilityNodeBase(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -18,9 +17,6 @@ UStateAbilityNodeBase::UStateAbilityNodeBase(const FObjectInitializer& ObjectIni
 	, Comment(FName())
 	, DisplayName(FName())
 {
-	INHERITS_PROP_META(ConfigVarsBagName, NAME_DataStruct);
-	INHERITS_PROP_META(ConfigVarsBagName, NAME_InheritedStruct);
-	INHERITS_PROP_META(ConfigVarsBagName, NAME_ConfigVarsIcon);
 }
 
 const UScriptStruct* UStateAbilityNodeBase::GetDataStruct()
@@ -58,7 +54,7 @@ TMap<FName, FConfigVars_EventSlot> UStateAbilityNodeBase::GetEventSlots()
 	TMap<FName, FConfigVars_EventSlot> Result;
 
 	// Native Event
-	for (TFieldIterator<FProperty> PropertyIter(GetClass()); PropertyIter; ++PropertyIter)
+	for (TFieldIteratorFromBaseStruct<FProperty> PropertyIter(GetClass()); PropertyIter; ++PropertyIter)
 	{
 		FProperty* ChildProperty = *PropertyIter;
 		FStructProperty* StructProperty = CastField<FStructProperty>(ChildProperty);

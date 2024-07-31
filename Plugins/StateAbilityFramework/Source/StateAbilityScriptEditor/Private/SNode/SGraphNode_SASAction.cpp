@@ -39,7 +39,14 @@ void SGraphNode_SASAction::Construct(const FArguments& InArgs, USASGraphNode* In
 	this->UpdateGraphNode();
 
 	USASGraphNode_Action* ActionNode = CastChecked<USASGraphNode_Action>(GraphNode);
-	ActionNode->OnUpdateGraphNode.AddSP(this, &SGraphNode_SASAction::UpdateGraphNode);
+
+	TWeakPtr<SGraphNode_SASAction> WeakGraphNode = SharedThis(this);
+	OnUpdateGraphNodeHandle = ActionNode->OnUpdateGraphNode.AddLambda([WeakGraphNode]() {
+		if (WeakGraphNode.IsValid())
+		{
+			WeakGraphNode.Pin()->UpdateGraphNode();
+		}
+	});
 }
 
 SGraphNode_SASAction::~SGraphNode_SASAction()
@@ -47,7 +54,7 @@ SGraphNode_SASAction::~SGraphNode_SASAction()
 	USASGraphNode_Action* ActionNode = CastChecked<USASGraphNode_Action>(GraphNode);
 	if (IsValid(ActionNode))
 	{
-		ActionNode->OnUpdateGraphNode.RemoveAll(this);
+		ActionNode->OnUpdateGraphNode.Remove(OnUpdateGraphNodeHandle);
 	}
 }
 

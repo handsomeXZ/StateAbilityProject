@@ -247,7 +247,7 @@ void UStateAbilityScriptEditorData::TraverseGraphNodeRecursive(USASGraphNode* Pr
 
 	if (!IsValid(CurrentNode))
 	{
-		InProcessor(nullptr);
+		InProcessor(PrevNode, nullptr);
 		return;
 	}
 

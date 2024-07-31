@@ -7,7 +7,7 @@
 #include "StateAbilityBranch.generated.h"
 
 
-UCLASS(BlueprintType, meta = (DisplayName = "If", InheritedDataStruct, DataStruct = "/Script/StateAbilitySystem.ConfigVars_Bool"))
+UCLASS(BlueprintType, meta = (DisplayName = "If", InheritedDataStruct, DataStruct = "/Script/StateAbilityScriptRuntime.ConfigVars_Bool"))
 class STATEABILITYSCRIPTRUNTIME_API UStateAbilityCondition : public UStateAbilityAction
 {
 	GENERATED_UCLASS_BODY()

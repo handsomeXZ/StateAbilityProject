@@ -28,6 +28,13 @@ void IDSExtraBackActionInterface::Execute_BindExtraBackAction(UObject* O, UInput
 	}
 }
 */
+
+
+/************************************************************************/
+/* 不允许AttributeBag之间嵌套。因为属于未定义行为								*/
+/************************************************************************/
+
+
 //////////////////////////////////////////////////////////////////////////
 struct FAttributeNetGuidReference
 {
@@ -120,7 +127,7 @@ public:
 };
 
 USTRUCT()
-struct FAttributeBag
+struct STATEABILITYSCRIPTRUNTIME_API FAttributeBag
 {
 	GENERATED_BODY()
 public:
@@ -134,10 +141,15 @@ public:
 	virtual void MarkDirty(const int32 Index);
 	virtual void MarkAllDirty();
 	virtual void ClearDirty();
+	virtual const UScriptStruct* GetScriptStruct() const { return nullptr; }
 
+	const FGuid& GetUID() { return UID; }
 protected:
 	virtual void UpdatePropertiesCompare(uint32 ReplicationFrame);
 protected:
+	UPROPERTY()
+	FGuid UID = FGuid::NewGuid();
+
 	FNetBitArray RawDirtyMark;
 	FNetBitArray DirtyMark;
 
@@ -147,7 +159,7 @@ protected:
 //////////////////////////////////////////////////////////////////////////
 
 USTRUCT()
-struct FAttributeEntityBag : public FAttributeBag
+struct STATEABILITYSCRIPTRUNTIME_API FAttributeEntityBag : public FAttributeBag
 {
 	GENERATED_BODY()
 public:
@@ -158,8 +170,9 @@ public:
 	FAttributeEntityBag& operator=(const FAttributeEntityBag& InOther);
 
 	virtual ~FAttributeEntityBag();
-	virtual bool IsDataValid() const;
+	virtual const UScriptStruct* GetScriptStruct() const override;
 	virtual int32 GetPropertyNum() const;
+	virtual bool IsDataValid() const;
 
 	void Initialize(FAttributeEntityBuildParam& BuildParam);
 	bool Serialize(FArchive& Ar);
@@ -167,7 +180,6 @@ public:
 
 	const uint8* GetMemory() const;
 	uint8* GetMutableMemory();
-	const UScriptStruct* GetScriptStruct() const;
 
 	template<typename T>
 	T& Get();
@@ -181,9 +193,6 @@ protected:
 	FAttributeNetFragment& GetNetFragment();
 	FAttributeNetSharedFragment& GetNetSharedFragment();
 protected:
-	UPROPERTY()
-	FGuid UID = FGuid::NewGuid();
-
 	UPROPERTY()
 	UScriptStruct* DataStruct;
 
@@ -211,7 +220,7 @@ struct TStructOpsTypeTraits<FAttributeEntityBag> : public TStructOpsTypeTraitsBa
 //////////////////////////////////////////////////////////////////////////
 
 USTRUCT()
-struct FAttributeDynamicBag : public FAttributeEntityBag
+struct STATEABILITYSCRIPTRUNTIME_API FAttributeDynamicBag : public FAttributeEntityBag
 {
 	GENERATED_BODY()
 public:

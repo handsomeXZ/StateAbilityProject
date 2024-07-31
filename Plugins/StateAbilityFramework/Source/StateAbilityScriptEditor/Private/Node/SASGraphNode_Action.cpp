@@ -15,8 +15,6 @@
 void USASGraphNode_Action::AllocateDefaultPins()
 {
 	CreatePin(EGPD_Input, USASEditorTypes::PinCategory_Action, TEXT("In"));
-	CreatePin(EGPD_Output, USASEditorTypes::PinCategory_Action, TEXT("Out"));
-
 
 	UStateAbilityAction* ActionNode = Cast<UStateAbilityAction>(NodeInstance);
 	if (!ActionNode)

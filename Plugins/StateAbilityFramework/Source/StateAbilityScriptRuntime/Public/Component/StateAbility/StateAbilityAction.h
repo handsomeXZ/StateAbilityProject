@@ -45,7 +45,7 @@ private:
 
 // 特殊的Action，在运行时并不会包含任何数据，仅作为标记存在。
 UCLASS(BlueprintType, Blueprintable, meta = (DataStruct = "/Script/StateAbilityScriptRuntime.ConfigVars_EventSlot"))
-class STATEABILITYSCRIPTRUNTIME_API UStateAbilityEventSlot : public UStateAbilityAction
+class STATEABILITYSCRIPTRUNTIME_API UStateAbilityEventSlot : public UStateAbilityNodeBase
 {
 	GENERATED_UCLASS_BODY()
 public:
