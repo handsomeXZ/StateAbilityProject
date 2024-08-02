@@ -11,7 +11,7 @@
 class UObject;
 class UStateAbilityScript;
 class UStateAbilityScriptArchetype;
-class USASGraphNode;
+class UGraphAbilityNode;
 class UStateAbilityNodeBase;
 class UStateAbilityEventSlot;
 class UConfigVarsData;
@@ -30,15 +30,15 @@ public:
 	virtual void OnCompile() override;
 	virtual void NotifyGraphChanged(const FEdGraphEditAction& Action) override;
 
-	void CompileNode_Recursive(UStateAbilityScriptArchetype* ScriptArchetype, USASGraphNode* RootGraphNode);
+	void CompileNode_Recursive(UStateAbilityScriptArchetype* ScriptArchetype, UGraphAbilityNode* RootGraphNode);
 	void Release();
-	void Release_Recursive(UStateAbilityScriptArchetype* ScriptArchetype, USASGraphNode* RootGraphNode);
+	void Release_Recursive(UStateAbilityScriptArchetype* ScriptArchetype, UGraphAbilityNode* RootGraphNode);
 
 	const TMap<FGuid, TObjectPtr<UStateAbilityEventSlot>>& CollectAllEventSlot() { return EventSlotsMap; }
 
 	// Parent instance node
 	UPROPERTY()
-	TObjectPtr<USASGraphNode> OwnerSDTGraphNode;
+	TObjectPtr<UGraphAbilityNode> OwnerSDTGraphNode;
 
 	UPROPERTY()
 	TMap<FGuid, TObjectPtr<UStateAbilityEventSlot>> EventSlotsMap;

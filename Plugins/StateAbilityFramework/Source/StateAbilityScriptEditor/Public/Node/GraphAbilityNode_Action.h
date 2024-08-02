@@ -2,13 +2,13 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Node/SASGraphNode.h"
-#include "SASGraphNode_Action.generated.h"
+#include "Node/GraphAbilityNode.h"
+#include "GraphAbilityNode_Action.generated.h"
 
 class UObject;
 
 UCLASS(MinimalAPI)
-class USASGraphNode_Action : public USASGraphNode
+class UGraphAbilityNode_Action : public UGraphAbilityNode
 {
 	GENERATED_BODY()
 public:

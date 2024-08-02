@@ -1,10 +1,10 @@
 
 
 
-#include "SNode/SGraphNode_SASEntry.h"
+#include "SNode/SGraphAbilityNode_Entry.h"
 
-#include "Node/SASGraphNode.h"
-#include "SNode/SSASGraphPin.h"
+#include "Node/GraphAbilityNode.h"
+#include "SNode/SGraphAbilityPin.h"
 
 #include "Delegates/Delegate.h"
 #include "GenericPlatform/ICursor.h"
@@ -27,9 +27,9 @@
 
 
 /////////////////////////////////////////////////////
-// SGraphNode_SASEntry
+// SGraphAbilityNode_Entry
 
-void SGraphNode_SASEntry::Construct(const FArguments& InArgs, USASGraphNode* InNode)
+void SGraphAbilityNode_Entry::Construct(const FArguments& InArgs, UGraphAbilityNode* InNode)
 {
 	this->GraphNode = InNode;
 
@@ -38,12 +38,12 @@ void SGraphNode_SASEntry::Construct(const FArguments& InArgs, USASGraphNode* InN
 	this->UpdateGraphNode();
 }
 
-void SGraphNode_SASEntry::GetNodeInfoPopups(FNodeInfoContext* Context, TArray<FGraphInformationPopupInfo>& Popups) const
+void SGraphAbilityNode_Entry::GetNodeInfoPopups(FNodeInfoContext* Context, TArray<FGraphInformationPopupInfo>& Popups) const
 {
 
 }
 
-FSlateColor SGraphNode_SASEntry::GetBorderBackgroundColor() const
+FSlateColor SGraphAbilityNode_Entry::GetBorderBackgroundColor() const
 {
 	FLinearColor InactiveStateColor(0.08f, 0.08f, 0.08f);
 	FLinearColor ActiveStateColorDim(0.4f, 0.3f, 0.15f);
@@ -52,7 +52,7 @@ FSlateColor SGraphNode_SASEntry::GetBorderBackgroundColor() const
 	return InactiveStateColor;
 }
 
-void SGraphNode_SASEntry::UpdateGraphNode()
+void SGraphAbilityNode_Entry::UpdateGraphNode()
 {
 	InputPins.Empty();
 	OutputPins.Empty();
@@ -72,7 +72,7 @@ void SGraphNode_SASEntry::UpdateGraphNode()
 			SNew(SBorder)
 			.BorderImage(FAppStyle::GetBrush("Graph.StateNode.Body"))
 		.Padding(0)
-		.BorderBackgroundColor(this, &SGraphNode_SASEntry::GetBorderBackgroundColor)
+		.BorderBackgroundColor(this, &SGraphAbilityNode_Entry::GetBorderBackgroundColor)
 		[
 			SNew(SOverlay)
 
@@ -90,9 +90,9 @@ void SGraphNode_SASEntry::UpdateGraphNode()
 	CreatePinWidgets();
 }
 
-void SGraphNode_SASEntry::CreatePinWidgets()
+void SGraphAbilityNode_Entry::CreatePinWidgets()
 {
-	USASGraphNode* SAGraphNode = CastChecked<USASGraphNode>(GraphNode);
+	UGraphAbilityNode* SAGraphNode = CastChecked<UGraphAbilityNode>(GraphNode);
 
 	UEdGraphPin* CurPin = SAGraphNode->GetOutputPin();
 	if (!CurPin->bHidden)
@@ -103,7 +103,7 @@ void SGraphNode_SASEntry::CreatePinWidgets()
 	}
 }
 
-void SGraphNode_SASEntry::AddPin(const TSharedRef<SGraphPin>& PinToAdd)
+void SGraphAbilityNode_Entry::AddPin(const TSharedRef<SGraphPin>& PinToAdd)
 {
 	PinToAdd->SetOwner(SharedThis(this));
 	RightNodeBox->AddSlot()
@@ -116,7 +116,7 @@ void SGraphNode_SASEntry::AddPin(const TSharedRef<SGraphPin>& PinToAdd)
 	OutputPins.Add(PinToAdd);
 }
 
-FText SGraphNode_SASEntry::GetPreviewCornerText() const
+FText SGraphAbilityNode_Entry::GetPreviewCornerText() const
 {
-	return NSLOCTEXT("SGraphNode_SASEntry", "CornerTextDescription", "Entry point for StateAbility");
+	return NSLOCTEXT("SGraphAbilityNode_Entry", "CornerTextDescription", "Entry point for StateAbility");
 }

@@ -1,19 +1,19 @@
-#include "SchemaAction/SASGraphEdSchemaActions.h"
+#include "SchemaAction/SGraphEdAbilitySchemaActions.h"
 
 #include "Settings/EditorStyleSettings.h"
-#include "Node/SAEditorTypes.h"
-#include "Node/SASGraphNode.h"
+#include "Node/StateAbilityEditorTypes.h"
+#include "Node/GraphAbilityNode.h"
 #include "Component/StateAbility/StateAbilityAction.h"
 
 
 #include "EdGraphNode_Comment.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 
-#define LOCTEXT_NAMESPACE "SASGraphEdSchemaActions"
+#define LOCTEXT_NAMESPACE "SGraphEdAbilitySchemaActions"
 
 //////////////////////////////////////////////////////////////////////////
-// FSASSchemaAction_AddComment
-UEdGraphNode* FSASSchemaAction_AddComment::PerformAction(class UEdGraph* ParentGraph, UEdGraphPin* FromPin, const FVector2D Location, bool bSelectNewNode)
+// FSAbilitySchemaAction_AddComment
+UEdGraphNode* FSAbilitySchemaAction_AddComment::PerformAction(class UEdGraph* ParentGraph, UEdGraphPin* FromPin, const FVector2D Location, bool bSelectNewNode)
 {
 	UEdGraphNode_Comment* const CommentTemplate = NewObject<UEdGraphNode_Comment>();
 
@@ -34,8 +34,8 @@ UEdGraphNode* FSASSchemaAction_AddComment::PerformAction(class UEdGraph* ParentG
 }
 
 //////////////////////////////////////////////////////////////////////////
-// FSASSchemaAction_NewNode
-UEdGraphNode* FSASSchemaAction_NewNode::PerformAction(class UEdGraph* ParentGraph, UEdGraphPin* FromPin, const FVector2D Location, bool bSelectNewNode)
+// FSAbilitySchemaAction_NewNode
+UEdGraphNode* FSAbilitySchemaAction_NewNode::PerformAction(class UEdGraph* ParentGraph, UEdGraphPin* FromPin, const FVector2D Location, bool bSelectNewNode)
 {
 	UEdGraphNode* ResultNode = nullptr;
 
@@ -89,7 +89,7 @@ UEdGraphNode* FSASSchemaAction_NewNode::PerformAction(class UEdGraph* ParentGrap
 	return ResultNode;
 }
 
-UEdGraphNode* FSASSchemaAction_NewNode::PerformAction(class UEdGraph* ParentGraph, TArray<UEdGraphPin*>& FromPins, const FVector2D Location, bool bSelectNewNode)
+UEdGraphNode* FSAbilitySchemaAction_NewNode::PerformAction(class UEdGraph* ParentGraph, TArray<UEdGraphPin*>& FromPins, const FVector2D Location, bool bSelectNewNode)
 {
 	UEdGraphNode* ResultNode = nullptr;
 	if (FromPins.Num() > 0)
@@ -110,7 +110,7 @@ UEdGraphNode* FSASSchemaAction_NewNode::PerformAction(class UEdGraph* ParentGrap
 	return ResultNode;
 }
 
-void FSASSchemaAction_NewNode::AddReferencedObjects(FReferenceCollector& Collector)
+void FSAbilitySchemaAction_NewNode::AddReferencedObjects(FReferenceCollector& Collector)
 {
 	FEdGraphSchemaAction::AddReferencedObjects(Collector);
 

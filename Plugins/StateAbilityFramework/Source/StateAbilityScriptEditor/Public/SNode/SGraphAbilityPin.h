@@ -7,11 +7,11 @@
 #include "Widgets/DeclarativeSyntaxSupport.h"
 
 /////////////////////////////////////////////////////
-// SSASGraphPin
-class SSASGraphPin : public SGraphPin
+// SGraphAbilityPin
+class SGraphAbilityPin : public SGraphPin
 {
 public:
-	SLATE_BEGIN_ARGS(SSASGraphPin) {}
+	SLATE_BEGIN_ARGS(SGraphAbilityPin) {}
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs, UEdGraphPin* InPin);

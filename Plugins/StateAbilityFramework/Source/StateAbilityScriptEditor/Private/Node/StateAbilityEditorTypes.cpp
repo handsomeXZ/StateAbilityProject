@@ -1,18 +1,18 @@
-#include "Node/SAEditorTypes.h"
+#include "Node/StateAbilityEditorTypes.h"
 
 #include "UObject/NameTypes.h"
 
 
 
-const FName USASEditorTypes::PinCategory_Defualt("DefualtNode");
-const FName USASEditorTypes::PinCategory_Entry("EntryNode");
-const FName USASEditorTypes::PinCategory_Exit("ExitNode");
-const FName USASEditorTypes::PinCategory_Action("ActionNode");
-USASEditorTypes::USASEditorTypes(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
+const FName UStateAbilityEditorTypes::PinCategory_Defualt("DefualtNode");
+const FName UStateAbilityEditorTypes::PinCategory_Entry("EntryNode");
+const FName UStateAbilityEditorTypes::PinCategory_Exit("ExitNode");
+const FName UStateAbilityEditorTypes::PinCategory_Action("ActionNode");
+UStateAbilityEditorTypes::UStateAbilityEditorTypes(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
 }
 
-FString SASClassUtils::ClassToString(UClass* InClass)
+FString StateAbilityClassUtils::ClassToString(UClass* InClass)
 {
 	FString ShortName = InClass ? InClass->GetMetaData(TEXT("DisplayName")) : FString();
 	if (!ShortName.IsEmpty())

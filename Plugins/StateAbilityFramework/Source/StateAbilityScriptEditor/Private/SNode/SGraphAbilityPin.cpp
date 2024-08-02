@@ -1,6 +1,6 @@
-#include "SNode/SSASGraphPin.h"
+#include "SNode/SGraphAbilityPin.h"
 
-void SSASGraphPin::Construct(const FArguments& InArgs, UEdGraphPin* InPin)
+void SGraphAbilityPin::Construct(const FArguments& InArgs, UEdGraphPin* InPin)
 {
 	this->SetCursor(EMouseCursor::Default);
 
@@ -13,25 +13,25 @@ void SSASGraphPin::Construct(const FArguments& InArgs, UEdGraphPin* InPin)
 	check(Schema);
 
 	SBorder::Construct(SBorder::FArguments()
-		.BorderImage(this, &SSASGraphPin::GetPinBorder)
-		.BorderBackgroundColor(this, &SSASGraphPin::GetPinColor)
-		.OnMouseButtonDown(this, &SSASGraphPin::OnPinMouseDown)
-		.Cursor(this, &SSASGraphPin::GetPinCursor)
+		.BorderImage(this, &SGraphAbilityPin::GetPinBorder)
+		.BorderBackgroundColor(this, &SGraphAbilityPin::GetPinColor)
+		.OnMouseButtonDown(this, &SGraphAbilityPin::OnPinMouseDown)
+		.Cursor(this, &SGraphAbilityPin::GetPinCursor)
 		.Padding(FMargin(10.0f))
 	);
 }
 
-TSharedRef<SWidget>	SSASGraphPin::GetDefaultValueWidget()
+TSharedRef<SWidget>	SGraphAbilityPin::GetDefaultValueWidget()
 {
 	return SNew(STextBlock);
 }
 
-const FSlateBrush* SSASGraphPin::GetPinBorder() const
+const FSlateBrush* SGraphAbilityPin::GetPinBorder() const
 {
 	return FAppStyle::GetBrush(TEXT("Graph.StateNode.Body"));
 }
 
-FSlateColor SSASGraphPin::GetPinColor() const
+FSlateColor SGraphAbilityPin::GetPinColor() const
 {
 	return FSlateColor(IsHovered() ? FLinearColor(1.0f, 0.7f, 0.0f) : FLinearColor(0.02f, 0.02f, 0.02f));
 }

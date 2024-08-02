@@ -2,18 +2,18 @@
 
 #include "CoreMinimal.h"
 
-#include "SAEditorTypes.generated.h"
+#include "StateAbilityEditorTypes.generated.h"
 
 // Maximum distance a drag can be off a node edge to require 'push off' from node
 const int32 NodeDistance = 60;
 
-namespace SASClassUtils
+namespace StateAbilityClassUtils
 {
 	FString ClassToString(UClass* InClass);
 }
 
 UCLASS()
-class USASEditorTypes : public UObject
+class UStateAbilityEditorTypes : public UObject
 {
 	GENERATED_UCLASS_BODY()
 

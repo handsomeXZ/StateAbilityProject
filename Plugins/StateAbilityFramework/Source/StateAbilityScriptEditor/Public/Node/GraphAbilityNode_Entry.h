@@ -1,17 +1,17 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Node/SASGraphNode.h"
+#include "Node/GraphAbilityNode.h"
 #include "Internationalization/Text.h"
 #include "UObject/ObjectMacros.h"
 #include "UObject/UObjectGlobals.h"
 
-#include "SASGraphNode_Entry.generated.h"
+#include "GraphAbilityNode_Entry.generated.h"
 
 class UObject;
 
 UCLASS(MinimalAPI)
-class USASGraphNode_Entry : public USASGraphNode
+class UGraphAbilityNode_Entry : public UGraphAbilityNode
 {
 	GENERATED_BODY()
 public:

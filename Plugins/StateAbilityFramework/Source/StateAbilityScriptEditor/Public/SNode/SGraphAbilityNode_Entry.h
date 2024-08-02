@@ -12,14 +12,13 @@ class SGraphPin;
 struct FGraphInformationPopupInfo;
 struct FNodeInfoContext;
 
-class SGraphNode_SASAction : public SGraphNode
+class SGraphAbilityNode_Entry : public SGraphNode
 {
 public:
-	SLATE_BEGIN_ARGS(SGraphNode_SASAction) {}
+	SLATE_BEGIN_ARGS(SGraphAbilityNode_Entry) {}
 	SLATE_END_ARGS()
 
-	void Construct(const FArguments& InArgs, class USASGraphNode* InNode);
-	~SGraphNode_SASAction();
+	void Construct(const FArguments& InArgs, class UGraphAbilityNode* InNode);
 
 	// SNodePanel::SNode interface
 	virtual void GetNodeInfoPopups(FNodeInfoContext* Context, TArray<FGraphInformationPopupInfo>& Popups) const override;
@@ -31,13 +30,9 @@ public:
 	virtual void AddPin(const TSharedRef<SGraphPin>& PinToAdd) override;
 	// End of SGraphNode interface
 
-	FText GetPinTooltip(UEdGraphPin* GraphPinObj) const;
-	FText GetPinName(const TSharedRef<SGraphPin>& PinToAdd) const;
+
+protected:
 	FSlateColor GetBorderBackgroundColor() const;
 
-	TSharedPtr<SHorizontalBox> OutputPinBox;
-	/** The node body widget, cached here so we can determine its size when we want ot position our overlays */
-	TSharedPtr<SBorder> NodeBody;
-private:
-	FDelegateHandle OnUpdateGraphNodeHandle;
+	FText GetPreviewCornerText() const;
 };

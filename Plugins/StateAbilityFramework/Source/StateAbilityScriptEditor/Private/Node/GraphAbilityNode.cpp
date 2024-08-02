@@ -1,15 +1,15 @@
-#include "Node/SASGraphNode.h"
+#include "Node/GraphAbilityNode.h"
 
 #include "Kismet2/KismetEditorUtilities.h"
 
-#define LOCTEXT_NAMESPACE "SASGraphNode"
+#define LOCTEXT_NAMESPACE "GraphAbilityNode"
 
-void USASGraphNode::InitializeNode(UEdGraph* InGraph)
+void UGraphAbilityNode::InitializeNode(UEdGraph* InGraph)
 {
 	// empty in base class
 }
 
-void USASGraphNode::PostPlacedNewNode()
+void UGraphAbilityNode::PostPlacedNewNode()
 {
 	// NodeInstance can be already spawned by paste operation, don't override it
 
@@ -32,28 +32,28 @@ void USASGraphNode::PostPlacedNewNode()
 	}
 }
 
-bool USASGraphNode::CanDuplicateNode() const
+bool UGraphAbilityNode::CanDuplicateNode() const
 {
 	return true;
 }
 
-bool USASGraphNode::CanUserDeleteNode() const
+bool UGraphAbilityNode::CanUserDeleteNode() const
 {
 	return true;
 }
 
-void USASGraphNode::DestroyNode()
+void UGraphAbilityNode::DestroyNode()
 {
 	UEdGraphNode::DestroyNode();
 }
 
-void USASGraphNode::PostCopyNode()
+void UGraphAbilityNode::PostCopyNode()
 {
 	ResetNodeOwner();
 }
 
 
-void USASGraphNode::PrepareForCopying()
+void UGraphAbilityNode::PrepareForCopying()
 {
 	if (NodeInstance)
 	{
@@ -63,7 +63,7 @@ void USASGraphNode::PrepareForCopying()
 	}
 }
 
-void USASGraphNode::ResetNodeOwner()
+void UGraphAbilityNode::ResetNodeOwner()
 {
 	if (NodeInstance)
 	{
@@ -75,7 +75,7 @@ void USASGraphNode::ResetNodeOwner()
 	}
 }
 
-void USASGraphNode::AutowireNewNode(UEdGraphPin* FromPin)
+void UGraphAbilityNode::AutowireNewNode(UEdGraphPin* FromPin)
 {
 	Super::AutowireNewNode(FromPin);
 
@@ -94,7 +94,7 @@ void USASGraphNode::AutowireNewNode(UEdGraphPin* FromPin)
 	}
 }
 
-void USASGraphNode::NodeConnectionListChanged()
+void UGraphAbilityNode::NodeConnectionListChanged()
 {
 	Super::NodeConnectionListChanged();
 

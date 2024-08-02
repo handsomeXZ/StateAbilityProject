@@ -1,6 +1,6 @@
-#include "Node/SASGraphNode_Action.h"
+#include "Node/GraphAbilityNode_Action.h"
 
-#include "Node/SAEditorTypes.h"
+#include "Node/StateAbilityEditorTypes.h"
 #include "Component/StateAbility/StateAbilityAction.h"
 #include "Component/StateAbility/Script/StateAbilityScript.h"
 #include "Component/StateAbility/Script/StateAbilityScriptArchetype.h"
@@ -10,11 +10,11 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 
-#define LOCTEXT_NAMESPACE "SASGraphNode_Action"
+#define LOCTEXT_NAMESPACE "GraphAbilityNode_Action"
 
-void USASGraphNode_Action::AllocateDefaultPins()
+void UGraphAbilityNode_Action::AllocateDefaultPins()
 {
-	CreatePin(EGPD_Input, USASEditorTypes::PinCategory_Action, TEXT("In"));
+	CreatePin(EGPD_Input, UStateAbilityEditorTypes::PinCategory_Action, TEXT("In"));
 
 	UStateAbilityAction* ActionNode = Cast<UStateAbilityAction>(NodeInstance);
 	if (!ActionNode)
@@ -25,11 +25,11 @@ void USASGraphNode_Action::AllocateDefaultPins()
 	TMap<FName, FConfigVars_EventSlot> EventSlots = ActionNode->GetEventSlots();
 	for (auto& EventPair : EventSlots)
 	{
-		CreatePin(EGPD_Output, USASEditorTypes::PinCategory_Action, EventPair.Key);
+		CreatePin(EGPD_Output, UStateAbilityEditorTypes::PinCategory_Action, EventPair.Key);
 	}
 }
 
-FText USASGraphNode_Action::GetNodeTitle(ENodeTitleType::Type TitleType) const
+FText UGraphAbilityNode_Action::GetNodeTitle(ENodeTitleType::Type TitleType) const
 {
 	UStateAbilityAction* MyNode = Cast<UStateAbilityAction>(NodeInstance);
 	if (MyNode->DisplayName.ToString().Len() > 0)
@@ -37,36 +37,36 @@ FText USASGraphNode_Action::GetNodeTitle(ENodeTitleType::Type TitleType) const
 		return FText::FromName(MyNode->DisplayName);
 	}
 
-	return FText::FromString(FName::NameToDisplayString(SASClassUtils::ClassToString(GetNodeClass()), false));
+	return FText::FromString(FName::NameToDisplayString(StateAbilityClassUtils::ClassToString(GetNodeClass()), false));
 }
 
-FText USASGraphNode_Action::GetTooltipText() const
+FText UGraphAbilityNode_Action::GetTooltipText() const
 {
 	return LOCTEXT("SASNodeTooltip", "This is a Action Node");
 }
 
-FString USASGraphNode_Action::GetNodeName() const
+FString UGraphAbilityNode_Action::GetNodeName() const
 {
 	return TEXT("Action Node");
 }
 
-UEdGraphPin* USASGraphNode_Action::GetInputPin() const
+UEdGraphPin* UGraphAbilityNode_Action::GetInputPin() const
 {
 	return Pins[0];
 }
 
 
-UEdGraphPin* USASGraphNode_Action::GetOutputPin() const
+UEdGraphPin* UGraphAbilityNode_Action::GetOutputPin() const
 {
 	return Pins[1];
 }
 
-UClass* USASGraphNode_Action::GetNodeClass() const
+UClass* UGraphAbilityNode_Action::GetNodeClass() const
 {
 	return NodeClass;
 }
 
-void USASGraphNode_Action::InitializeNode(UEdGraph* InGraph)
+void UGraphAbilityNode_Action::InitializeNode(UEdGraph* InGraph)
 {
 	// 加入ScriptArchetype，方便后续清扫，不用担心序列化问题，因为没有RF_Standalone标记，所以这里是根据引用序列化的。
 	UStateAbilityScriptArchetype* ScriptArchetype = InGraph->GetTypedOuter<UStateAbilityScriptArchetype>();
@@ -81,7 +81,7 @@ void USASGraphNode_Action::InitializeNode(UEdGraph* InGraph)
 	}
 }
 
-void USASGraphNode_Action::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent)
+void UGraphAbilityNode_Action::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent)
 {
 	if (PropertyChangedEvent.Property && PropertyChangedEvent.Property->GetFName() == UStateAbilityNodeBase::DynamicEventSlotBagName)
 	{

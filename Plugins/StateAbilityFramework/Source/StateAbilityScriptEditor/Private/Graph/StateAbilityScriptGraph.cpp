@@ -1,12 +1,12 @@
 ﻿
 #include "Graph/StateAbilityScriptGraph.h"
 
-#include "Node/SASGraphNode.h"
+#include "Node/GraphAbilityNode.h"
 #include "Component/StateAbility/StateAbilityNodeBase.h"
 #include "Component/StateAbility/StateAbilityAction.h"
 #include "Component/StateAbility/StateAbilityBranch.h"
 #include "Component/StateAbility/Script/StateAbilityScript.h"
-#include "SchemaAction/SASGraphEdSchemaActions.h"
+#include "SchemaAction/SGraphEdAbilitySchemaActions.h"
 
 #include "SGraphNode.h"
 #include "SGraphPanel.h"
@@ -46,7 +46,7 @@ void UStateAbilityScriptGraph::OnCompile()
 	UEdGraphPin::ResolveAllPinReferences();
 	if (Nodes.Num() > 0 && Nodes[0] && Nodes[0]->Pins.Num() > 0 && Nodes[0]->Pins[0]->LinkedTo.Num() > 0)
 	{
-		USASGraphNode* GraphNode = Cast<USASGraphNode>(Nodes[0]->Pins[0]->LinkedTo[0]->GetOwningNode());	// 因为Graph的第一个Node是EntryNode，不需要存储。
+		UGraphAbilityNode* GraphNode = Cast<UGraphAbilityNode>(Nodes[0]->Pins[0]->LinkedTo[0]->GetOwningNode());	// 因为Graph的第一个Node是EntryNode，不需要存储。
 
 		UStateAbilityScriptArchetype* ScriptArchetype = CastChecked<UStateAbilityScriptArchetype>(GetOuter());
 		UPackage* Package = ScriptArchetype->GetPackage();
@@ -58,7 +58,7 @@ void UStateAbilityScriptGraph::OnCompile()
 	}
 }
 
-void UStateAbilityScriptGraph::CompileNode_Recursive(UStateAbilityScriptArchetype* ScriptArchetype, USASGraphNode* RootGraphNode)
+void UStateAbilityScriptGraph::CompileNode_Recursive(UStateAbilityScriptArchetype* ScriptArchetype, UGraphAbilityNode* RootGraphNode)
 {
 	if (!IsValid(RootGraphNode))
 	{
@@ -84,7 +84,7 @@ void UStateAbilityScriptGraph::CompileNode_Recursive(UStateAbilityScriptArchetyp
 		}
 		for (int32 LinkId = 0; LinkId < Pin->LinkedTo.Num(); ++LinkId)
 		{
-			USASGraphNode* GraphNode = Cast<USASGraphNode>(Pin->LinkedTo[LinkId]->GetOwningNode());
+			UGraphAbilityNode* GraphNode = Cast<UGraphAbilityNode>(Pin->LinkedTo[LinkId]->GetOwningNode());
 
 			CompileNode_Recursive(ScriptArchetype, GraphNode);
 		}
@@ -99,7 +99,7 @@ void UStateAbilityScriptGraph::NotifyGraphChanged(const FEdGraphEditAction& Acti
 		{
 			UStateAbilityScriptArchetype* ScriptArchetype = CastChecked<UStateAbilityScriptArchetype>(GetOuter());
 
-			const USASGraphNode* GraphNode = Cast<USASGraphNode>(Node);
+			const UGraphAbilityNode* GraphNode = Cast<UGraphAbilityNode>(Node);
 			UStateAbilityNodeBase* NextAbilityNode = Cast<UStateAbilityNodeBase>(GraphNode->NodeInstance);
 			if (IsValid(NextAbilityNode))
 			{
@@ -117,7 +117,7 @@ void UStateAbilityScriptGraph::Release()
 {
 	if (Nodes.Num() > 0 && Nodes[0] && Nodes[0]->Pins.Num() > 0 && Nodes[0]->Pins[0]->LinkedTo.Num() > 0)
 	{
-		USASGraphNode* GraphNode = Cast<USASGraphNode>(Nodes[0]->Pins[0]->LinkedTo[0]->GetOwningNode());	// 因为Graph的第一个Node是EntryNode，不需要存储。
+		UGraphAbilityNode* GraphNode = Cast<UGraphAbilityNode>(Nodes[0]->Pins[0]->LinkedTo[0]->GetOwningNode());	// 因为Graph的第一个Node是EntryNode，不需要存储。
 
 		UStateAbilityScriptArchetype* ScriptArchetype = CastChecked<UStateAbilityScriptArchetype>(GetOuter());
 
@@ -125,7 +125,7 @@ void UStateAbilityScriptGraph::Release()
 	}
 }
 
-void UStateAbilityScriptGraph::Release_Recursive(UStateAbilityScriptArchetype* ScriptArchetype, USASGraphNode* RootGraphNode)
+void UStateAbilityScriptGraph::Release_Recursive(UStateAbilityScriptArchetype* ScriptArchetype, UGraphAbilityNode* RootGraphNode)
 {
 	if (!IsValid(RootGraphNode))
 	{

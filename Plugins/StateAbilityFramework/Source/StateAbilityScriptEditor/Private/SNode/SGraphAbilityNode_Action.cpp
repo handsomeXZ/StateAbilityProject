@@ -1,11 +1,11 @@
 
 
 
-#include "SNode/SGraphNode_SASAction.h"
+#include "SNode/SGraphAbilityNode_Action.h"
 
-#include "Node/SASGraphNode.h"
-#include "Node/SASGraphNode_Action.h"
-#include "SNode/SSASGraphPin.h"
+#include "Node/GraphAbilityNode.h"
+#include "Node/GraphAbilityNode_Action.h"
+#include "SNode/SGraphAbilityPin.h"
 
 #include "Delegates/Delegate.h"
 #include "GenericPlatform/ICursor.h"
@@ -29,8 +29,8 @@
 
 
 /////////////////////////////////////////////////////
-// SGraphNode_SASAction
-void SGraphNode_SASAction::Construct(const FArguments& InArgs, USASGraphNode* InNode)
+// SGraphAbilityNode_Action
+void SGraphAbilityNode_Action::Construct(const FArguments& InArgs, UGraphAbilityNode* InNode)
 {
 	this->GraphNode = InNode;
 
@@ -38,9 +38,9 @@ void SGraphNode_SASAction::Construct(const FArguments& InArgs, USASGraphNode* In
 
 	this->UpdateGraphNode();
 
-	USASGraphNode_Action* ActionNode = CastChecked<USASGraphNode_Action>(GraphNode);
+	UGraphAbilityNode_Action* ActionNode = CastChecked<UGraphAbilityNode_Action>(GraphNode);
 
-	TWeakPtr<SGraphNode_SASAction> WeakGraphNode = SharedThis(this);
+	TWeakPtr<SGraphAbilityNode_Action> WeakGraphNode = SharedThis(this);
 	OnUpdateGraphNodeHandle = ActionNode->OnUpdateGraphNode.AddLambda([WeakGraphNode]() {
 		if (WeakGraphNode.IsValid())
 		{
@@ -49,21 +49,21 @@ void SGraphNode_SASAction::Construct(const FArguments& InArgs, USASGraphNode* In
 	});
 }
 
-SGraphNode_SASAction::~SGraphNode_SASAction()
+SGraphAbilityNode_Action::~SGraphAbilityNode_Action()
 {
-	USASGraphNode_Action* ActionNode = CastChecked<USASGraphNode_Action>(GraphNode);
+	UGraphAbilityNode_Action* ActionNode = CastChecked<UGraphAbilityNode_Action>(GraphNode);
 	if (IsValid(ActionNode))
 	{
 		ActionNode->OnUpdateGraphNode.Remove(OnUpdateGraphNodeHandle);
 	}
 }
 
-void SGraphNode_SASAction::GetNodeInfoPopups(FNodeInfoContext* Context, TArray<FGraphInformationPopupInfo>& Popups) const
+void SGraphAbilityNode_Action::GetNodeInfoPopups(FNodeInfoContext* Context, TArray<FGraphInformationPopupInfo>& Popups) const
 {
 
 }
 
-void SGraphNode_SASAction::UpdateGraphNode()
+void SGraphAbilityNode_Action::UpdateGraphNode()
 {
 	InputPins.Empty();
 	OutputPins.Empty();
@@ -101,7 +101,7 @@ void SGraphNode_SASAction::UpdateGraphNode()
 			SNew(SBorder)
 			.BorderImage( FAppStyle::GetBrush( "Graph.StateNode.Body" ) )
 			.Padding(0.0f)
-			.BorderBackgroundColor( this, &SGraphNode_SASAction::GetBorderBackgroundColor )
+			.BorderBackgroundColor( this, &SGraphAbilityNode_Action::GetBorderBackgroundColor )
 			[
 				SNew(SOverlay)
 
@@ -151,7 +151,7 @@ void SGraphNode_SASAction::UpdateGraphNode()
 										.AutoWidth()
 										[
 											SNew(SLevelOfDetailBranchNode)
-											.UseLowDetailSlot(this, &SGraphNode_SASAction::UseLowDetailNodeTitles)
+											.UseLowDetailSlot(this, &SGraphAbilityNode_Action::UseLowDetailNodeTitles)
 											.LowDetail()
 											[
 												SNew(SBox)
@@ -180,10 +180,10 @@ void SGraphNode_SASAction::UpdateGraphNode()
 														SAssignNew(InlineEditableText, SInlineEditableTextBlock)
 														.Style( FAppStyle::Get(), "Graph.StateNode.NodeTitleInlineEditableText" )
 														.Text( NodeTitle.Get(), &SNodeTitle::GetHeadTitle )
-														.OnVerifyTextChanged(this, &SGraphNode_SASAction::OnVerifyNameTextChanged)
-														.OnTextCommitted(this, &SGraphNode_SASAction::OnNameTextCommited)
-														.IsReadOnly( this, &SGraphNode_SASAction::IsNameReadOnly )
-														.IsSelected(this, &SGraphNode_SASAction::IsSelectedExclusively)
+														.OnVerifyTextChanged(this, &SGraphAbilityNode_Action::OnVerifyNameTextChanged)
+														.OnTextCommitted(this, &SGraphAbilityNode_Action::OnNameTextCommited)
+														.IsReadOnly( this, &SGraphAbilityNode_Action::IsNameReadOnly )
+														.IsSelected(this, &SGraphAbilityNode_Action::IsSelectedExclusively)
 													]
 													+SVerticalBox::Slot()
 													.AutoHeight()
@@ -215,24 +215,24 @@ void SGraphNode_SASAction::UpdateGraphNode()
 	CreatePinWidgets();
 }
 
-void SGraphNode_SASAction::CreatePinWidgets()
+void SGraphAbilityNode_Action::CreatePinWidgets()
 {
-	USASGraphNode* MyNode = CastChecked<USASGraphNode>(GraphNode);
+	UGraphAbilityNode* MyNode = CastChecked<UGraphAbilityNode>(GraphNode);
 
 	for (int32 PinIdx = 0; PinIdx < MyNode->Pins.Num(); PinIdx++)
 	{
 		UEdGraphPin* MyPin = MyNode->Pins[PinIdx];
 		if (!MyPin->bHidden)
 		{
-			TSharedPtr<SGraphPin> NewPin = SNew(SSASGraphPin, MyPin)
-				.ToolTipText(this, &SGraphNode_SASAction::GetPinTooltip, MyPin);
+			TSharedPtr<SGraphPin> NewPin = SNew(SGraphAbilityPin, MyPin)
+				.ToolTipText(this, &SGraphAbilityNode_Action::GetPinTooltip, MyPin);
 
 			AddPin(NewPin.ToSharedRef());
 		}
 	}
 }
 
-FText SGraphNode_SASAction::GetPinTooltip(UEdGraphPin* GraphPinObj) const
+FText SGraphAbilityNode_Action::GetPinTooltip(UEdGraphPin* GraphPinObj) const
 {
 	FText HoverText = FText::GetEmpty();
 
@@ -251,7 +251,7 @@ FText SGraphNode_SASAction::GetPinTooltip(UEdGraphPin* GraphPinObj) const
 	return HoverText;
 }
 
-FText SGraphNode_SASAction::GetPinName(const TSharedRef<SGraphPin>& PinToAdd) const
+FText SGraphAbilityNode_Action::GetPinName(const TSharedRef<SGraphPin>& PinToAdd) const
 {
 	if (PinToAdd->GetPinObj()->PinName != NAME_None)
 	{
@@ -261,7 +261,7 @@ FText SGraphNode_SASAction::GetPinName(const TSharedRef<SGraphPin>& PinToAdd) co
 	return FText::FromString(TEXT(""));
 }
 
-void SGraphNode_SASAction::AddPin(const TSharedRef<SGraphPin>& PinToAdd)
+void SGraphAbilityNode_Action::AddPin(const TSharedRef<SGraphPin>& PinToAdd)
 {
 	PinToAdd->SetOwner(SharedThis(this));
 
@@ -313,7 +313,7 @@ void SGraphNode_SASAction::AddPin(const TSharedRef<SGraphPin>& PinToAdd)
 	}
 }
 
-FSlateColor SGraphNode_SASAction::GetBorderBackgroundColor() const
+FSlateColor SGraphAbilityNode_Action::GetBorderBackgroundColor() const
 {
 	FLinearColor InactiveStateColor(0.08f, 0.08f, 0.08f);
 	FLinearColor ActiveStateColorDim(0.4f, 0.3f, 0.15f);
@@ -322,7 +322,7 @@ FSlateColor SGraphNode_SASAction::GetBorderBackgroundColor() const
 	FLinearColor UnInstancedSelectorColor(0.f, 0.f, 0.f);
 	/*return GetBorderBackgroundColor_Internal(InactiveStateColor, ActiveStateColorDim, ActiveStateColorBright);*/
 	
-	USASGraphNode_Action* MyNode = CastChecked<USASGraphNode_Action>(GraphNode);
+	UGraphAbilityNode_Action* MyNode = CastChecked<UGraphAbilityNode_Action>(GraphNode);
 
 
 	return MyNode->NodeInstance ? InstancedSelectorColor : UnInstancedSelectorColor;

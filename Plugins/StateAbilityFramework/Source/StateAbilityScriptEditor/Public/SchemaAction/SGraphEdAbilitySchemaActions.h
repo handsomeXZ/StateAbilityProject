@@ -2,16 +2,16 @@
 
 #include "CoreMinimal.h"
 
-#include "SASGraphEdSchemaActions.generated.h"
+#include "SGraphEdAbilitySchemaActions.generated.h"
 
 /** Action to add a comment to the graph */
 USTRUCT()
-struct FSASSchemaAction_AddComment : public FEdGraphSchemaAction
+struct FSAbilitySchemaAction_AddComment : public FEdGraphSchemaAction
 {
 	GENERATED_BODY()
 
-	FSASSchemaAction_AddComment() : FEdGraphSchemaAction() {}
-	FSASSchemaAction_AddComment(FText InDescription, FText InToolTip)
+	FSAbilitySchemaAction_AddComment() : FEdGraphSchemaAction() {}
+	FSAbilitySchemaAction_AddComment(FText InDescription, FText InToolTip)
 		: FEdGraphSchemaAction(FText(), MoveTemp(InDescription), MoveTemp(InToolTip), 0)
 	{
 	}
@@ -23,20 +23,20 @@ struct FSASSchemaAction_AddComment : public FEdGraphSchemaAction
 
 /** Action to add a node to the graph */
 USTRUCT()
-struct FSASSchemaAction_NewNode : public FEdGraphSchemaAction
+struct FSAbilitySchemaAction_NewNode : public FEdGraphSchemaAction
 {
 	GENERATED_USTRUCT_BODY();
 
 	/** Template of node we want to create */
 	UPROPERTY()
-	TObjectPtr<class USASGraphNode> NodeTemplate;
+	TObjectPtr<class UGraphAbilityNode> NodeTemplate;
 
-	FSASSchemaAction_NewNode()
+	FSAbilitySchemaAction_NewNode()
 		: FEdGraphSchemaAction()
 		, NodeTemplate(nullptr)
 	{}
 
-	FSASSchemaAction_NewNode(FText InNodeCategory, FText InMenuDesc, FText InToolTip, const int32 InGrouping)
+	FSAbilitySchemaAction_NewNode(FText InNodeCategory, FText InMenuDesc, FText InToolTip, const int32 InGrouping)
 		: FEdGraphSchemaAction(MoveTemp(InNodeCategory), MoveTemp(InMenuDesc), MoveTemp(InToolTip), InGrouping)
 		, NodeTemplate(nullptr)
 	{}
@@ -50,7 +50,7 @@ struct FSASSchemaAction_NewNode : public FEdGraphSchemaAction
 	template <typename NodeType>
 	static NodeType* SpawnNodeFromTemplate(class UEdGraph* ParentGraph, NodeType* InTemplateNode, const FVector2D Location = FVector2D(0.0f, 0.0f), bool bSelectNewNode = true)
 	{
-		FSASSchemaAction_NewNode Action;
+		FSAbilitySchemaAction_NewNode Action;
 		Action.NodeTemplate = InTemplateNode;
 
 		return Cast<NodeType>(Action.PerformAction(ParentGraph, nullptr, Location, bSelectNewNode));

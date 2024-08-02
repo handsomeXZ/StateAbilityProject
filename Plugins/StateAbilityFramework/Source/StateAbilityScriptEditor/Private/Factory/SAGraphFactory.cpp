@@ -1,10 +1,10 @@
 #include "Factory/SAGraphFactory.h"
 
-#include "SNode/SGraphNode_SASEntry.h"
-#include "SNode/SGraphNode_SASAction.h"
+#include "SNode/SGraphAbilityNode_Entry.h"
+#include "SNode/SGraphAbilityNode_Action.h"
 
-#include "Node/SASGraphNode_Entry.h"
-#include "Node/SASGraphNode_Action.h"
+#include "Node/GraphAbilityNode_Entry.h"
+#include "Node/GraphAbilityNode_Action.h"
 
 #include "StateAbilityScriptEdGraphSchema.h"
 //#include "Factory/SAConnectionDrawingPolicy.h"
@@ -12,14 +12,14 @@
 TSharedPtr<SGraphNode> FSAGraphNodeFactory::CreateNode(UEdGraphNode* Node) const
 {
 	//SAS
-	if (USASGraphNode_Entry* SASNode = Cast<USASGraphNode_Entry>(Node))
+	if (UGraphAbilityNode_Entry* SASNode = Cast<UGraphAbilityNode_Entry>(Node))
 	{
-		return SNew(SGraphNode_SASEntry, SASNode);
+		return SNew(SGraphAbilityNode_Entry, SASNode);
 	}
 
-	if (USASGraphNode_Action* SASNode = Cast<USASGraphNode_Action>(Node))
+	if (UGraphAbilityNode_Action* SASNode = Cast<UGraphAbilityNode_Action>(Node))
 	{
-		return SNew(SGraphNode_SASAction, SASNode);
+		return SNew(SGraphAbilityNode_Action, SASNode);
 	}
 
 	return nullptr;

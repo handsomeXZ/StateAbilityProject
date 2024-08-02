@@ -2,7 +2,7 @@
 
 #include "Component/StateAbility/Script/StateAbilityScript.h"
 #include "StateTree/ScriptStateTreeView.h"
-#include "Node/SASGraphNode.h"
+#include "Node/GraphAbilityNode.h"
 #include "Component/StateAbility/StateAbilityNodeBase.h"
 #include "Component/StateAbility/StateAbilityAction.h"
 #include "Component/StateAbility/StateAbilityState.h"
@@ -97,7 +97,7 @@ void UStateAbilityScriptEditorData::SaveScriptStateTree()
 			// 因为Graph的第一个Node是EntryNode，不需要存储。
 			if (ActionNode->EdGraph && ActionNode->EdGraph->Nodes.Num() > 0 && ActionNode->EdGraph->Nodes[0] && ActionNode->EdGraph->Nodes[0]->Pins.Num() > 0 && ActionNode->EdGraph->Nodes[0]->Pins[0]->LinkedTo.Num() > 0)
 			{
-				USASGraphNode* GraphNode = Cast<USASGraphNode>(ActionNode->EdGraph->Nodes[0]->Pins[0]->LinkedTo[0]->GetOwningNode());
+				UGraphAbilityNode* GraphNode = Cast<UGraphAbilityNode>(ActionNode->EdGraph->Nodes[0]->Pins[0]->LinkedTo[0]->GetOwningNode());
 				UStateAbilityNodeBase* AbilityNode = Cast<UStateAbilityNodeBase>(GraphNode->NodeInstance);
 				CurrentUniqueID = AbilityNode->UniqueID;
 				ScriptArchetype->ActionSequenceMap.Add(CurrentUniqueID, AbilityNode);
@@ -114,7 +114,7 @@ void UStateAbilityScriptEditorData::SaveScriptStateTree()
 				// 因为Graph的第一个Node是EntryNode，不需要存储。
 				if (ActionNode->EdGraph && ActionNode->EdGraph->Nodes.Num() > 0 && ActionNode->EdGraph->Nodes[0] && ActionNode->EdGraph->Nodes[0]->Pins.Num() > 0 && ActionNode->EdGraph->Nodes[0]->Pins[0]->LinkedTo.Num() > 0)
 				{
-					USASGraphNode* GraphNode = Cast<USASGraphNode>(ActionNode->EdGraph->Nodes[0]->Pins[0]->LinkedTo[0]->GetOwningNode());
+					UGraphAbilityNode* GraphNode = Cast<UGraphAbilityNode>(ActionNode->EdGraph->Nodes[0]->Pins[0]->LinkedTo[0]->GetOwningNode());
 					UStateAbilityNodeBase* AbilityNode = Cast<UStateAbilityNodeBase>(GraphNode->NodeInstance);
 					CurrentUniqueID = AbilityNode->UniqueID;
 
@@ -149,9 +149,9 @@ void UStateAbilityScriptEditorData::SaveScriptStateTree()
 		if (CurrentEdGraph && CurrentEdGraph->Nodes.Num() > 0 && CurrentEdGraph->Nodes[0])
 		{
 			// 因为Graph的第一个Node是EntryNode，不需要存储。
-			USASGraphNode* EntryNode = Cast<USASGraphNode>(CurrentEdGraph->Nodes[0]);
+			UGraphAbilityNode* EntryNode = Cast<UGraphAbilityNode>(CurrentEdGraph->Nodes[0]);
 			
-			TraverseGraphNodeRecursive(nullptr, EntryNode, [ScriptArchetype](USASGraphNode* PrevNode, USASGraphNode* CurrentNode) {
+			TraverseGraphNodeRecursive(nullptr, EntryNode, [ScriptArchetype](UGraphAbilityNode* PrevNode, UGraphAbilityNode* CurrentNode) {
 				UStateAbilityNodeBase* CurAbilityNode = Cast<UStateAbilityNodeBase>(CurrentNode->NodeInstance);
 				ScriptArchetype->ActionMap.Add(CurAbilityNode->UniqueID, CurAbilityNode);
 
@@ -216,8 +216,8 @@ void UStateAbilityScriptEditorData::TraverseAllNodeInstance(TFunction<void(UStat
 	TraverseAllGraph([this, Processor = InProcessor](UEdGraph* CurrentEdGraph){
 		if (CurrentEdGraph && CurrentEdGraph->Nodes.Num() > 0 && CurrentEdGraph->Nodes[0] && CurrentEdGraph->Nodes[0]->Pins.Num() > 0 && CurrentEdGraph->Nodes[0]->Pins[0]->LinkedTo.Num() > 0)
 		{
-			USASGraphNode* GraphNode = Cast<USASGraphNode>(CurrentEdGraph->Nodes[0]->Pins[0]->LinkedTo[0]->GetOwningNode());	// 因为Graph的第一个Node是EntryNode，不需要存储。
-			TraverseGraphNodeRecursive(nullptr, GraphNode, [Processor = Processor](USASGraphNode* PrevNode, USASGraphNode* CurrentNode){
+			UGraphAbilityNode* GraphNode = Cast<UGraphAbilityNode>(CurrentEdGraph->Nodes[0]->Pins[0]->LinkedTo[0]->GetOwningNode());	// 因为Graph的第一个Node是EntryNode，不需要存储。
+			TraverseGraphNodeRecursive(nullptr, GraphNode, [Processor = Processor](UGraphAbilityNode* PrevNode, UGraphAbilityNode* CurrentNode){
 				UStateAbilityNodeBase* AbilityNode = Cast<UStateAbilityNodeBase>(CurrentNode->NodeInstance);
 				Processor(AbilityNode);
 			});
@@ -241,7 +241,7 @@ void UStateAbilityScriptEditorData::TraverseStateTreeNodeRecursive(UStateTreeBas
 	}
 }
 
-void UStateAbilityScriptEditorData::TraverseGraphNodeRecursive(USASGraphNode* PrevNode, USASGraphNode* CurrentNode, TFunction<void(USASGraphNode* PrevNode, USASGraphNode* CurrentNode)> InProcessor)
+void UStateAbilityScriptEditorData::TraverseGraphNodeRecursive(UGraphAbilityNode* PrevNode, UGraphAbilityNode* CurrentNode, TFunction<void(UGraphAbilityNode* PrevNode, UGraphAbilityNode* CurrentNode)> InProcessor)
 {
 	// PrevNode 允许是空的
 
@@ -262,7 +262,7 @@ void UStateAbilityScriptEditorData::TraverseGraphNodeRecursive(USASGraphNode* Pr
 		}
 		for (int32 LinkId = 0; LinkId < Pin->LinkedTo.Num(); ++LinkId)
 		{
-			USASGraphNode* NextNode = Cast<USASGraphNode>(Pin->LinkedTo[LinkId]->GetOwningNode());
+			UGraphAbilityNode* NextNode = Cast<UGraphAbilityNode>(Pin->LinkedTo[LinkId]->GetOwningNode());
 			TraverseGraphNodeRecursive(CurrentNode, NextNode, InProcessor);
 		}
 	}

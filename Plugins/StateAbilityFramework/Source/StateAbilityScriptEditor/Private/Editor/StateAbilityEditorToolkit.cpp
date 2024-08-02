@@ -7,8 +7,8 @@
 #include "Graph/StateAbilityScriptGraph.h"
 #include "StateAbilityScriptEdGraphSchema.h"
 #include "StateAbilityScriptEditor.h"
-#include "Node/SASGraphNode_Entry.h"
-#include "Node/SASGraphNode_Action.h"
+#include "Node/GraphAbilityNode_Entry.h"
+#include "Node/GraphAbilityNode_Action.h"
 #include "Editor/StateAbilityEditorToolbar.h"
 #include "Editor/StateAbilityEditorCommands.h"
 #include "Factory/SAEditorModes.h"
@@ -92,9 +92,9 @@ UObject* StateAbilityEditorUtils::GetSelectionForPropertyEditor(UObject* InSelec
 	{
 		return nullptr;
 	}
-	else if (USASGraphNode* SASGraphNode = Cast<USASGraphNode>(InSelection))
+	else if (UGraphAbilityNode* GraphAbilityNode = Cast<UGraphAbilityNode>(InSelection))
 	{
-		return SASGraphNode->NodeInstance;
+		return GraphAbilityNode->NodeInstance;
 	}
 	else if (UStateTreeStateNode* StateTreeStateNode = Cast<UStateTreeStateNode>(InSelection))
 	{
@@ -640,7 +640,7 @@ void FStateAbilityEditor::CopySelectedNodes()
 
 	for (FGraphPanelSelectionSet::TIterator SelectedIter(SelectedNodes); SelectedIter; ++SelectedIter)
 	{
-		USASGraphNode* Node = Cast<USASGraphNode>(*SelectedIter);
+		UGraphAbilityNode* Node = Cast<UGraphAbilityNode>(*SelectedIter);
 		if (Node)
 		{
 			Node->PostCopyNode();
@@ -696,7 +696,7 @@ void FStateAbilityEditor::PasteNodesHere(const FVector2D& Location)
 	const FGraphPanelSelectionSet SelectedNodes = GetSelectedNodes();
 	//for (FGraphPanelSelectionSet::TConstIterator SelectedIter(SelectedNodes); SelectedIter; ++SelectedIter)
 	//{
-	//	USASGraphNode* Node = Cast<USASGraphNode>(*SelectedIter);
+	//	UGraphAbilityNode* Node = Cast<UGraphAbilityNode>(*SelectedIter);
 	//	if (Node && Node->IsSubNode())
 	//	{
 	//		Node = Node->ParentNode;
@@ -736,7 +736,7 @@ void FStateAbilityEditor::PasteNodesHere(const FVector2D& Location)
 	for (TSet<UEdGraphNode*>::TIterator It(PastedNodes); It; ++It)
 	{
 		UEdGraphNode* EdNode = *It;
-		USASGraphNode* SDTNode = Cast<USASGraphNode>(EdNode);
+		UGraphAbilityNode* SDTNode = Cast<UGraphAbilityNode>(EdNode);
 		if (EdNode)
 		{
 			AvgNodePosition.X += EdNode->NodePosX;
@@ -758,7 +758,7 @@ void FStateAbilityEditor::PasteNodesHere(const FVector2D& Location)
 	for (TSet<UEdGraphNode*>::TIterator It(PastedNodes); It; ++It)
 	{
 		UEdGraphNode* PasteNode = *It;
-		USASGraphNode* PasteSDTNode = Cast<USASGraphNode>(PasteNode);
+		UGraphAbilityNode* PasteSDTNode = Cast<UGraphAbilityNode>(PasteNode);
 
 		if (PasteNode)
 		{

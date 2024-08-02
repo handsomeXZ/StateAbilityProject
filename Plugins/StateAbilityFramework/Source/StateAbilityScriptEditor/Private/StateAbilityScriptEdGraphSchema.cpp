@@ -3,13 +3,13 @@
 
 #include "StateAbilityScriptEdGraphSchema.h"
 
-#include "Node/SAEditorTypes.h"
-#include "Node/SASGraphNode_Entry.h"
-#include "Node/SASGraphNode_Action.h"
+#include "Node/StateAbilityEditorTypes.h"
+#include "Node/GraphAbilityNode_Entry.h"
+#include "Node/GraphAbilityNode_Action.h"
 #include "Component/StateAbility/StateAbilityNodeBase.h"
 #include "Component/StateAbility/StateAbilityAction.h"
 #include "StateAbilityScriptEditor.h"
-#include "SchemaAction/SASGraphEdSchemaActions.h"
+#include "SchemaAction/SGraphEdAbilitySchemaActions.h"
 
 #include "AIGraphTypes.h"
 
@@ -82,8 +82,8 @@ UStateAbilityScriptEdGraphSchema::UStateAbilityScriptEdGraphSchema(const FObject
 void UStateAbilityScriptEdGraphSchema::CreateDefaultNodesForGraph(UEdGraph& Graph) const
 {
 	// Create the entry、exit tunnels
-	FGraphNodeCreator<USASGraphNode_Entry> EntryNodeCreator(Graph);
-	USASGraphNode_Entry* EntryNode = EntryNodeCreator.CreateNode();
+	FGraphNodeCreator<UGraphAbilityNode_Entry> EntryNodeCreator(Graph);
+	UGraphAbilityNode_Entry* EntryNode = EntryNodeCreator.CreateNode();
 	EntryNodeCreator.Finalize();
 	SetNodeMetaData(EntryNode, FNodeMetadata::DefaultGraphNode);
 
@@ -99,11 +99,11 @@ void UStateAbilityScriptEdGraphSchema::GetGraphContextActions(FGraphContextMenuB
 {
 	const FName PinCategory = ContextMenuBuilder.FromPin ?
 		ContextMenuBuilder.FromPin->PinType.PinCategory :
-		USASEditorTypes::PinCategory_Defualt;
+		UStateAbilityEditorTypes::PinCategory_Defualt;
 
 	const bool bNoParent = (ContextMenuBuilder.FromPin == NULL);
-	const bool bOnlyEntry = (PinCategory == USASEditorTypes::PinCategory_Entry);
-	const bool bOnlyAction = (PinCategory == USASEditorTypes::PinCategory_Action);
+	const bool bOnlyEntry = (PinCategory == UStateAbilityEditorTypes::PinCategory_Entry);
+	const bool bOnlyAction = (PinCategory == UStateAbilityEditorTypes::PinCategory_Action);
 	const bool bAllowAction = bNoParent || bOnlyEntry || bOnlyAction;
 
 	FStateAbilityScriptEditorModule& EditorModule = FModuleManager::GetModuleChecked<FStateAbilityScriptEditorModule>(TEXT("StateAbilityScriptEditor"));
@@ -118,10 +118,10 @@ void UStateAbilityScriptEdGraphSchema::GetGraphContextActions(FGraphContextMenuB
 		{
 			const FText ActionTypeName = FText::FromString(FName::NameToDisplayString(ClassData.ToString(), false));
 
-			TSharedPtr<FSASSchemaAction_NewNode> Action = TSharedPtr<FSASSchemaAction_NewNode>(
-				new FSASSchemaAction_NewNode(LOCTEXT("NewNode", "Action"), ActionTypeName, FText::GetEmpty(), 0)
+			TSharedPtr<FSAbilitySchemaAction_NewNode> Action = TSharedPtr<FSAbilitySchemaAction_NewNode>(
+				new FSAbilitySchemaAction_NewNode(LOCTEXT("NewNode", "Action"), ActionTypeName, FText::GetEmpty(), 0)
 			);
-			USASGraphNode_Action* GraphNode = NewObject<USASGraphNode_Action>(ContextMenuBuilder.OwnerOfTemporaries);
+			UGraphAbilityNode_Action* GraphNode = NewObject<UGraphAbilityNode_Action>(ContextMenuBuilder.OwnerOfTemporaries);
 			GraphNode->NodeClass = ClassData.GetClass();
 
 			Action->NodeTemplate = GraphNode;
@@ -153,7 +153,7 @@ void UStateAbilityScriptEdGraphSchema::GetContextMenuActions(UToolMenu* Menu, UG
 FLinearColor UStateAbilityScriptEdGraphSchema::GetPinTypeColor(const FEdGraphPinType& PinType) const
 {
 	/*const UGraphEditorSettings* Settings = GetDefault<UGraphEditorSettings>();*/
-	if (PinType.PinCategory == USASEditorTypes::PinCategory_Entry)
+	if (PinType.PinCategory == UStateAbilityEditorTypes::PinCategory_Entry)
 	{
 		return FLinearColor::White;
 	}
@@ -188,11 +188,11 @@ const FPinConnectionResponse UStateAbilityScriptEdGraphSchema::CanCreateConnecti
 		return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, LOCTEXT("PinErrorOutput", "Can't connect output node to output node"));
 	}
 
-	const bool bPinAIsEntry = PinA->PinType.PinCategory == USASEditorTypes::PinCategory_Entry;
-	const bool bPinAIsAction = PinA->PinType.PinCategory == USASEditorTypes::PinCategory_Action;
+	const bool bPinAIsEntry = PinA->PinType.PinCategory == UStateAbilityEditorTypes::PinCategory_Entry;
+	const bool bPinAIsAction = PinA->PinType.PinCategory == UStateAbilityEditorTypes::PinCategory_Action;
 
-	const bool bPinBIsEntry = PinB->PinType.PinCategory == USASEditorTypes::PinCategory_Entry;
-	const bool bPinBIsAction = PinB->PinType.PinCategory == USASEditorTypes::PinCategory_Action;
+	const bool bPinBIsEntry = PinB->PinType.PinCategory == UStateAbilityEditorTypes::PinCategory_Entry;
+	const bool bPinBIsAction = PinB->PinType.PinCategory == UStateAbilityEditorTypes::PinCategory_Action;
 
 	// check for cycles
 	StateAbilityScriptEdGraphSchemaUtils::FNodeVisitorCycleChecker CycleChecker;
@@ -214,7 +214,7 @@ bool UStateAbilityScriptEdGraphSchema::TryCreateConnection(UEdGraphPin* PinA, UE
 	// Modify the Pin LinkTo, which will affect FConnectionDrawingPolicy::DetermineLinkGeometry()
 	if (PinB->Direction == PinA->Direction)
 	{
-		if (USASGraphNode* Node = Cast<USASGraphNode>(PinB->GetOwningNode()))
+		if (UGraphAbilityNode* Node = Cast<UGraphAbilityNode>(PinB->GetOwningNode()))
 		{
 			if (PinA->Direction == EGPD_Input)
 			{
@@ -234,7 +234,7 @@ bool UStateAbilityScriptEdGraphSchema::TryCreateConnection(UEdGraphPin* PinA, UE
 
 TSharedPtr<FEdGraphSchemaAction> UStateAbilityScriptEdGraphSchema::GetCreateCommentAction() const
 {
-	return TSharedPtr<FEdGraphSchemaAction>(static_cast<FEdGraphSchemaAction*>(new FSASSchemaAction_AddComment));
+	return TSharedPtr<FEdGraphSchemaAction>(static_cast<FEdGraphSchemaAction*>(new FSAbilitySchemaAction_AddComment));
 }
 
 bool UStateAbilityScriptEdGraphSchema::IsCacheVisualizationOutOfDate(int32 InVisualizationCacheID) const

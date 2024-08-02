@@ -1,21 +1,21 @@
-#include "Node/SASGraphNode_Entry.h"
+#include "Node/GraphAbilityNode_Entry.h"
 
-#include "Node/SAEditorTypes.h"
+#include "Node/StateAbilityEditorTypes.h"
 
-#define LOCTEXT_NAMESPACE "SASGraphNode_Entry"
+#define LOCTEXT_NAMESPACE "GraphAbilityNode_Entry"
 
 
-void USASGraphNode_Entry::AllocateDefaultPins()
+void UGraphAbilityNode_Entry::AllocateDefaultPins()
 {
-	CreatePin(EGPD_Output, USASEditorTypes::PinCategory_Entry, TEXT("Entry"));
+	CreatePin(EGPD_Output, UStateAbilityEditorTypes::PinCategory_Entry, TEXT("Entry"));
 }
 
-FText USASGraphNode_Entry::GetTooltipText() const
+FText UGraphAbilityNode_Entry::GetTooltipText() const
 {
 	return LOCTEXT("SASNodeTooltip", "Entry point for State Ability Script");
 }
 
-UEdGraphNode* USASGraphNode_Entry::GetOutputNode() const
+UEdGraphNode* UGraphAbilityNode_Entry::GetOutputNode() const
 {
 	if (Pins.Num() > 0 && Pins[0] != NULL)
 	{
@@ -28,7 +28,7 @@ UEdGraphNode* USASGraphNode_Entry::GetOutputNode() const
 	return NULL;
 }
 
-UEdGraphPin* USASGraphNode_Entry::GetOutputPin() const
+UEdGraphPin* UGraphAbilityNode_Entry::GetOutputPin() const
 {
 	Pins[0]->PinToolTip = LOCTEXT("SASNodeTooltip", "Out").ToString();
 	return Pins[0];

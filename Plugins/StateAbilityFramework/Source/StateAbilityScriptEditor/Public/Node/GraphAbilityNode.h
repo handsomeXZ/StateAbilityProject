@@ -4,17 +4,17 @@
 
 #include "CoreMinimal.h"
 #include "EdGraph/EdGraphNode.h"
-#include "SASGraphNode.generated.h"
+#include "GraphAbilityNode.generated.h"
 
 /**
  *
  */
 UCLASS()
-class USASGraphNode : public UEdGraphNode
+class UGraphAbilityNode : public UEdGraphNode
 {
 	GENERATED_BODY()
 public:
-	USASGraphNode()
+	UGraphAbilityNode()
 		: NodeClass(nullptr)
 		, NodeInstance(nullptr)
 	{}
@@ -43,7 +43,7 @@ public:
 	virtual UEdGraphPin* GetOutputPin() const { return nullptr; }
 
 	// @return the name of this Node
-	virtual FString GetNodeName() const { return TEXT("SASGraphNode"); }
+	virtual FString GetNodeName() const { return TEXT("GraphAbilityNode"); }
 
 	virtual void PostCopyNode();
 

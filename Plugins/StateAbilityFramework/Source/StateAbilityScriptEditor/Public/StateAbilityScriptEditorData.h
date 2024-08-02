@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "StateAbilityScriptEditorData.generated.h"
 
-class USASGraphNode;
+class UGraphAbilityNode;
 class UStateTreeBaseNode;
 class UStateAbilityNodeBase;
 enum class EScriptStateTreeNodeType : uint8;
@@ -30,7 +30,7 @@ private:
 	void TraverseAllGraph(TFunction<void(UEdGraph*)> InProcessor);
 	void TraverseAllNodeInstance(TFunction<void(UStateAbilityNodeBase*)> InProcessor);
 	void TraverseStateTreeNodeRecursive(UStateTreeBaseNode* CurrentNode, TFunction<void(UStateTreeBaseNode*)> InProcessor);
-	void TraverseGraphNodeRecursive(USASGraphNode* PrevNode, USASGraphNode* CurrentNode, TFunction<void(USASGraphNode* PrevNode, USASGraphNode* CurrentNode)> InProcessor);
+	void TraverseGraphNodeRecursive(UGraphAbilityNode* PrevNode, UGraphAbilityNode* CurrentNode, TFunction<void(UGraphAbilityNode* PrevNode, UGraphAbilityNode* CurrentNode)> InProcessor);
 	void TraverseGraphRecursive(UStateTreeBaseNode* CurrentNode, TFunction<void(UEdGraph*)> InProcessor);
 
 	void ResetObjectOwner(UObject* NewOwner, UObject* Object, ERenameFlags AdditionalFlags = RF_NoFlags);
