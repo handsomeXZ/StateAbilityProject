@@ -694,7 +694,7 @@ void FAttributeDetailsNode::GenerateAttributeChildren(FAttributeBag& AttributeBa
 	}
 
 	FStructProperty* StructProperty = CastField<FStructProperty>(Property);
-	if (!StructProperty || !StructProperty->Struct->IsChildOf(FAttributeDynamicBag::StaticStruct()))
+	if (StructProperty && StructProperty->Struct->IsChildOf(FAttributeDynamicBag::StaticStruct()))
 	{
 		// 如果是DynamicBag，允许创建 AddWidget
 		SAssignNew(ValueOverride, SHorizontalBox)
@@ -777,6 +777,7 @@ TSharedPtr<FAttributeDetailsNode> FAttributeDetailsNode::GetOutermostNode()
 void SAttributeDetailsView::Construct(const FArguments& InArgs)
 {
 	ViewModel = MakeShared<FAttributeDetailsViewModel>();
+	ViewModel->OnUpdateDetails.AddSP(this, &SAttributeDetailsView::UpdateDetails);
 	ViewModel->OnPinInfoChanged.AddSP(this, &SAttributeDetailsView::UpdateDetails);
 
 	//TSharedRef<SScrollBar> HorizontalScrollBar = SNew(SScrollBar)
@@ -881,8 +882,10 @@ void SAttributeDetailsViewRow::Construct(const FArguments& InArgs, const TShared
 	Node = InNode;
 
 	TSharedPtr<FAttributeDetailsNode> OutermostNode = Node->GetOutermostNode();
+	FStructProperty* StructProperty = CastField<FStructProperty>(Node->Property);
 
 	bool bReadOnly = !(Attribute::IsScriptStruct<FAttributeDynamicBag>(OutermostNode->Property));
+	bool bIsAttributeBag = StructProperty && StructProperty->Struct->IsChildOf(FAttributeBag::StaticStruct());
 
 	TWeakPtr<SAttributeDetailsViewRow> WeakViewRow = SharedThis(this).ToWeakPtr();
 
@@ -893,6 +896,48 @@ void SAttributeDetailsViewRow::Construct(const FArguments& InArgs, const TShared
 		//.OnAcceptDrop(this, &SAttributeDetailsViewRow::HandleAcceptDrop)
 		//.Style(&FStateAbilityEditorStyle::Get().GetWidgetStyle<FTableRowStyle>("StateTree.Selection"))
 		, InOwnerTableView);
+
+	SAssignNew(ValueWidget, SHorizontalBox);
+
+	if(!bIsAttributeBag)
+	{
+		ValueWidget->AddSlot()
+		.VAlign(VAlign_Fill)
+		.HAlign(HAlign_Left)
+		.AutoWidth()
+		[
+			SNew(SPinTypeSelector, FGetPinTypeTree::CreateSP(this, &SAttributeDetailsViewRow::GetFilteredVariableTypeTree))
+			.TargetPinType_Lambda([WeakViewRow]() {
+				if (WeakViewRow.IsValid())
+				{
+					return WeakViewRow.Pin()->GetPinInfo();
+				}
+				return FEdGraphPinType();
+			})
+			.OnPinTypeChanged_Lambda([WeakViewRow](const FEdGraphPinType& PinType) {
+				if (WeakViewRow.IsValid())
+				{
+					return WeakViewRow.Pin()->PinInfoChanged(PinType);
+				}
+			})
+			.Schema(GetDefault<UAttributeBagSchema>())
+			.bAllowArrays(true)
+			.TypeTreeFilter(ETypeTreeFilter::None)
+			.Font(IDetailLayoutBuilder::GetDetailFont())
+			.ReadOnly(bReadOnly)
+		];
+	}
+
+	if (Node->ValueOverride.IsValid())
+	{
+		ValueWidget->AddSlot()
+		.VAlign(VAlign_Fill)
+		.HAlign(HAlign_Left)
+		[
+			Node->ValueOverride.ToSharedRef()
+		];
+	}
+
 
 	this->ChildSlot
 	.HAlign(HAlign_Fill)
@@ -918,7 +963,7 @@ void SAttributeDetailsViewRow::Construct(const FArguments& InArgs, const TShared
 			.Text(this, &SAttributeDetailsViewRow::GetAttributeName)
 			.MultiLine(false)
 			.Clipping(EWidgetClipping::ClipToBounds)
-			.IsReadOnly(bReadOnly)
+			.IsReadOnly(bReadOnly || bIsAttributeBag)
 			.IsSelected_Lambda([bReadOnly]() {
 				return !bReadOnly;
 			})// 在TreeView内TextBlock会失去焦点，所以只能用这种方式
@@ -980,25 +1025,7 @@ void SAttributeDetailsViewRow::Construct(const FArguments& InArgs, const TShared
 		.HAlign(HAlign_Left)
 		.FillWidth(0.5f)
 		[
-			SAssignNew(PinTypeSelector, SPinTypeSelector, FGetPinTypeTree::CreateSP(this, &SAttributeDetailsViewRow::GetFilteredVariableTypeTree))
-			.TargetPinType_Lambda([WeakViewRow]() {
-				if (WeakViewRow.IsValid())
-				{
-					return WeakViewRow.Pin()->GetPinInfo();
-				}
-				return FEdGraphPinType();
-			})
-			.OnPinTypeChanged_Lambda([WeakViewRow](const FEdGraphPinType& PinType) {
-				if (WeakViewRow.IsValid())
-				{
-					return WeakViewRow.Pin()->PinInfoChanged(PinType);
-				}
-			})
-			.Schema(GetDefault<UAttributeBagSchema>())
-			.bAllowArrays(true)
-			.TypeTreeFilter(ETypeTreeFilter::None)
-			.Font(IDetailLayoutBuilder::GetDetailFont())
-			.ReadOnly(bReadOnly)
+			ValueWidget.ToSharedRef()
 		]
 	];
 }
@@ -1100,7 +1127,7 @@ void SAttributeDetailsViewRow::PinInfoChanged(const FEdGraphPinType& PinType)
 
 	Attribute::DynamicBag::ApplyChangesToPropertyDescs(
 		LOCTEXT("OnPropertyTypeChanged", "Change Property Type"), OutermostNode->Property, OutermostNode->PropertyOuter,
-		[&PinType, OutermostNode](TArray<FAttributeBagPropertyDesc>& PropertyDescs)
+		[&PinType, Node = Node, OutermostNode](TArray<FAttributeBagPropertyDesc>& PropertyDescs)
 		{
 			if (!OutermostNode->IsDataValid())
 			{
@@ -1108,7 +1135,7 @@ void SAttributeDetailsViewRow::PinInfoChanged(const FEdGraphPinType& PinType)
 			}
 
 			// Find and change struct type
-			if (FAttributeBagPropertyDesc* Desc = PropertyDescs.FindByPredicate([Property = OutermostNode->Property](const FAttributeBagPropertyDesc& Desc) { return Desc.CachedProperty == Property; }))
+			if (FAttributeBagPropertyDesc* Desc = PropertyDescs.FindByPredicate([Property = Node->Property](const FAttributeBagPropertyDesc& Desc) { return Desc.CachedProperty == Property; }))
 			{
 				Attribute::DynamicBag::SetPropertyDescFromPin(*Desc, PinType);
 			}

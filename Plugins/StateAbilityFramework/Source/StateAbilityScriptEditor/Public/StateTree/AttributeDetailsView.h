@@ -86,7 +86,7 @@ private:
 private:
 	TSharedPtr<FAttributeDetailsNode> Node;
 	TSharedPtr<SInlineEditableTextBlock> NameTextBlock;
-	TSharedPtr<SPinTypeSelector> PinTypeSelector;
+	TSharedPtr<SHorizontalBox> ValueWidget;
 
 	TWeakPtr<FAttributeDetailsViewModel> ViewModel;
 };
