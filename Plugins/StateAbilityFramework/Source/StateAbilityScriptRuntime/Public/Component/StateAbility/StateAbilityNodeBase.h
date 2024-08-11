@@ -32,8 +32,8 @@ public:
 #if WITH_EDITOR
 	// 必须统一利用CreateInstance来创建实例
 	template<typename NodeType>
-	static NodeType* CreateInstance(UStateAbilityScript* Script, UClass* Class);
-	static UStateAbilityNodeBase* CreateInstance(UStateAbilityScript* Script, UClass* Class);
+	static NodeType* CreateInstance(UStateAbilityScriptArchetype* ScriptArchetype, UClass* Class);
+	static UStateAbilityNodeBase* CreateInstance(UStateAbilityScriptArchetype* ScriptArchetype, UClass* Class);
 
 	TMap<FName, FConfigVars_EventSlot> GetEventSlots();
 
@@ -60,6 +60,9 @@ public:
 	UPROPERTY(meta = (DataStruct = "/Script/StateAbilityScriptRuntime.ConfigVars_EventSlotBag"))
 	FConfigVarsBag DynamicEventSlotBag;
 
+	UPROPERTY()
+	FConfigVars_EventSlot ThenExec_Event;
+
 #if WITH_EDITORONLY_DATA
 	UPROPERTY(EditAnywhere, Category = "一般")
 	ENodeRepMode NodeRepMode = ENodeRepMode::Default;
@@ -73,8 +76,8 @@ public:
 
 #if WITH_EDITOR
 template<typename NodeType>
-NodeType* UStateAbilityNodeBase::CreateInstance(UStateAbilityScript* Script, UClass* Class)
+NodeType* UStateAbilityNodeBase::CreateInstance(UStateAbilityScriptArchetype* ScriptArchetype, UClass* Class)
 {
-	return Cast<NodeType>(CreateInstance(Script, Class));
+	return Cast<NodeType>(CreateInstance(ScriptArchetype, Class));
 }
 #endif

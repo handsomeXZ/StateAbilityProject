@@ -78,12 +78,27 @@ namespace UE::ScriptStateTree::Editor
 			}
 		}
 	}
+
+	void ExpandAllNodes(TArray<TObjectPtr<UStateTreeBaseNode>>& Nodes, TSharedPtr<STreeView<TWeakObjectPtr<UStateTreeBaseNode>>> TreeView)
+	{
+		if (Nodes.IsEmpty())
+		{
+			return;
+		}
+
+		for (TObjectPtr<UStateTreeBaseNode>& Node : Nodes)
+		{
+			TreeView->SetItemExpansion(Node, true);
+			ExpandAllNodes(Node->Children, TreeView);
+		}
+	}
+
 };
 
 //////////////////////////////////////////////////////////////////////////
 // FScriptStateTreeViewModel
-FScriptStateTreeViewModel::FScriptStateTreeViewModel()
-	: EditorDataWeak(nullptr)
+FScriptStateTreeViewModel::FScriptStateTreeViewModel(UStateAbilityScriptEditorData* InEditorData)
+	: EditorDataWeak(InEditorData)
 {
 
 }
@@ -93,11 +108,9 @@ FScriptStateTreeViewModel::~FScriptStateTreeViewModel()
 
 }
 
-void FScriptStateTreeViewModel::Init(UStateAbilityScriptEditorData* InEditorData)
+void FScriptStateTreeViewModel::Init(UStateTreeStateNode* InRootStateNode)
 {
-	EditorDataWeak = InEditorData;
-
-
+	RootStateNode = InRootStateNode;
 }
 
 void FScriptStateTreeViewModel::PostUndo(bool bSuccess)
@@ -115,6 +128,18 @@ void FScriptStateTreeViewModel::ClearSelection()
 	SetSelection(nullptr);
 }
 
+void FScriptStateTreeViewModel::ClearSelection(UObject* ClearSelected)
+{
+	for (auto It = SelectedNodes.CreateIterator(); It; ++It)
+	{
+		TWeakObjectPtr<UObject> SelectItem = *It;
+		if (SelectItem.IsValid() && SelectItem.Get() == ClearSelected)
+		{
+			It.RemoveCurrent();
+		}
+	}
+}
+
 void FScriptStateTreeViewModel::SetSelection(UStateTreeBaseNode* Selected)
 {
 	SelectedNodes.Reset();
@@ -126,7 +151,10 @@ void FScriptStateTreeViewModel::SetSelection(UStateTreeBaseNode* Selected)
 		SelectedNodesSet.Add(Selected);
 	}
 
-	OnSelectionChanged.Broadcast(SelectedNodesSet);
+	if (!SelectedNodesSet.IsEmpty())
+	{
+		EditorDataWeak->GetScriptViewModel()->OnStateTreeNodeSelected.Broadcast(SelectedNodesSet);
+	}
 }
 
 void FScriptStateTreeViewModel::SetSelection(const TArray<TWeakObjectPtr<UStateTreeBaseNode>>& InSelectedNodes)
@@ -144,7 +172,10 @@ void FScriptStateTreeViewModel::SetSelection(const TArray<TWeakObjectPtr<UStateT
 	}
 
 	//TArray<FGuid> SelectedTaskIDArr;
-	OnSelectionChanged.Broadcast(SelectedNodesSet);
+	if (!SelectedNodesSet.IsEmpty())
+	{
+		EditorDataWeak->GetScriptViewModel()->OnStateTreeNodeSelected.Broadcast(SelectedNodesSet);
+	}
 }
 
 bool FScriptStateTreeViewModel::IsSelected(const UStateTreeBaseNode* Node) const
@@ -240,6 +271,8 @@ void FScriptStateTreeViewModel::DeleteSelectedNode()
 		// 最后移除Selection
 		CreateNewNode(Selection, EScriptStateTreeNodeType::Slot, false);
 	}
+
+	ClearSelection();
 }
 
 UStateTreeBaseNode* FScriptStateTreeViewModel::CreateNewNode(UStateTreeBaseNode* SlotNode, EScriptStateTreeNodeType NodeType, bool bIsDeferredInitialize)
@@ -285,20 +318,13 @@ UStateTreeBaseNode* FScriptStateTreeViewModel::CreateNewNode(UStateTreeBaseNode*
 			if (ParentNode->Children[index] == SlotNode)
 			{
 				ParentNode->Children[index] = NewNode;
-				continue;
+				break;
 			}
 		}
 	}
 	else
 	{
 		NewNode->Parent = nullptr;
-
-		// 可能是Root，需要特殊处理
-		if (!EditorData->TreeRoots.IsEmpty() && EditorData->TreeRoots[0] == SlotNode)
-		{
-			EditorData->Modify();
-			EditorData->TreeRoots[0] = NewNode;
-		}
 	}
 
 	// 旧的SlotNode已经没用了，开始执行释放回收流程
@@ -309,7 +335,7 @@ UStateTreeBaseNode* FScriptStateTreeViewModel::CreateNewNode(UStateTreeBaseNode*
 		// 非延迟初始化，立即执行
 		NewNode->Init(SharedThis(this));
 		// 如果是延迟的，我们不应该广播，因为它还未处理完成
-		OnNodeAdded.Broadcast(ParentNode, NewNode);
+		OnNodeAdded(ParentNode, NewNode);
 	}
 
 	return NewNode;
@@ -317,22 +343,36 @@ UStateTreeBaseNode* FScriptStateTreeViewModel::CreateNewNode(UStateTreeBaseNode*
 
 UStateAbilityScriptArchetype* FScriptStateTreeViewModel::GetScriptArchetype()
 {
-	if (UStateAbilityScriptEditorData* EditorData = EditorDataWeak.Get())
+	if (EditorDataWeak.IsValid())
 	{
-		return EditorData->GetTypedOuter<UStateAbilityScriptArchetype>();
+		return EditorDataWeak.Get()->GetTypedOuter<UStateAbilityScriptArchetype>();
 	}
 
 	return nullptr;
 }
 
-TObjectPtr<UStateTreeBaseNode> FScriptStateTreeViewModel::GetTreeRoot() const
+UStateAbilityScriptEditorData* FScriptStateTreeViewModel::GetScriptEditorData()
 {
-	UStateAbilityScriptEditorData* EditorData = EditorDataWeak.Get();
-	if (EditorData != nullptr && !EditorData->TreeRoots.IsEmpty())
+	if (EditorDataWeak.IsValid())
 	{
-		return EditorData->TreeRoots[0];
+		return EditorDataWeak.Get();
 	}
+
 	return nullptr;
+}
+
+TArray<TObjectPtr<UStateTreeBaseNode>>& FScriptStateTreeViewModel::GetTreeRoots()
+{
+	if (IsValid(RootStateNode))
+	{
+		return RootStateNode->Children;
+	}
+	else
+	{
+		static TArray<TObjectPtr<UStateTreeBaseNode>> EmptyArray;
+		EmptyArray.Empty();
+		return EmptyArray;
+	}
 }
 
 void FScriptStateTreeViewModel::RenameNode(UStateTreeBaseNode* Node, FName NewName)
@@ -506,7 +546,10 @@ void FScriptStateTreeViewModel::MoveSelectedNodes_Internal(UStateTreeBaseNode* T
 
 void FScriptStateTreeViewModel::TraversingAllNodes(TFunction<void(UStateTreeBaseNode*)> InProcessor)
 {
-	TraversingAllNodesRecursive(GetTreeRoot(), InProcessor);
+	for (TObjectPtr<UStateTreeBaseNode> RootNode : GetTreeRoots())
+	{
+		TraversingAllNodesRecursive(RootNode, InProcessor);
+	}
 }
 
 void FScriptStateTreeViewModel::TraversingAllNodesRecursive(UStateTreeBaseNode* ParentNode, TFunction<void(UStateTreeBaseNode*)> InProcessor)
@@ -524,6 +567,47 @@ void FScriptStateTreeViewModel::TraversingAllNodesRecursive(UStateTreeBaseNode* 
 	}
 }
 
+void FScriptStateTreeViewModel::OnNodeAdded(UStateTreeBaseNode* ParentNode, UStateTreeBaseNode* NewNode)
+{
+	OnNodeAdded_Delegate.Broadcast(ParentNode, NewNode);
+}
+
+void FScriptStateTreeViewModel::OnNodesMoved(const TSet<UStateTreeBaseNode*>& AffectedParents, const TSet<UStateTreeBaseNode*>& MovedNodes)
+{
+	OnNodesMoved_Delegate.Broadcast(AffectedParents, MovedNodes);
+}
+
+void FScriptStateTreeViewModel::OnNodeRelease(UStateTreeBaseNode* OldNode)
+{
+	OnNodeRelease_Delegate.Broadcast(OldNode);
+}
+
+void FScriptStateTreeViewModel::OnSpawnNodeGraph(UEdGraph* NewGraph)
+{
+	OnSpawnNodeGraph_Delegate.Broadcast(NewGraph);
+}
+
+void FScriptStateTreeViewModel::OnDetailsViewChangingProperties(UObject* SelectedObject)
+{
+	OnDetailsViewChangingProperties_Delegate.Broadcast(SelectedObject);
+}
+
+void FScriptStateTreeViewModel::UpdateStateTree()
+{
+	OnUpdateStateTree_Delegate.Broadcast();
+}
+
+void FScriptStateTreeViewModel::UpdateStateNode()
+{
+	OnUpdateStateNode_Delegate.Broadcast();
+}
+
+void FScriptStateTreeViewModel::UpdateStateNodePin()
+{
+	OnUpdateStateNodePin_Delegate.Broadcast();
+	OnUpdateStateTree_Delegate.Broadcast();
+}
+
 //////////////////////////////////////////////////////////////////////////
 // SScriptStateTreeView
 
@@ -535,7 +619,13 @@ SScriptStateTreeView::SScriptStateTreeView()
 
 SScriptStateTreeView::~SScriptStateTreeView()
 {
-
+	if (ScriptStateTreeViewModel.IsValid())
+	{
+		ScriptStateTreeViewModel->OnNodeAdded_Delegate.RemoveAll(this);
+		ScriptStateTreeViewModel->OnNodesMoved_Delegate.RemoveAll(this);
+		ScriptStateTreeViewModel->OnDetailsViewChangingProperties_Delegate.RemoveAll(this);
+		ScriptStateTreeViewModel->OnUpdateStateTree_Delegate.RemoveAll(this);
+	}
 }
 
 FReply SScriptStateTreeView::OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
@@ -549,18 +639,18 @@ FReply SScriptStateTreeView::OnMouseButtonDown(const FGeometry& MyGeometry, cons
 	return FReply::Unhandled();
 }
 
-void SScriptStateTreeView::Construct(const FArguments& InArgs, TSharedPtr<FScriptStateTreeViewModel> InScriptStateTreeViewModel, const TSharedRef<FUICommandList>& InCommandList)
+void SScriptStateTreeView::Construct(const FArguments& InArgs, TSharedPtr<FScriptStateTreeViewModel> InScriptStateTreeViewModel)
 {
 	ScriptStateTreeViewModel = InScriptStateTreeViewModel;
-	CommandList = InCommandList;
+	CommandList = ScriptStateTreeViewModel->GetScriptEditorData()->GetScriptViewModel()->ToolkitCommands;
 
-	ScriptStateTreeViewModel->OnNodeAdded.AddSP(this, &SScriptStateTreeView::HandleModelNodeAdded);
-	ScriptStateTreeViewModel->OnNodesMoved.AddSP(this, &SScriptStateTreeView::HandleModelNodesMoved);
-	ScriptStateTreeViewModel->OnDetailsViewChangingProperties.AddSP(this, &SScriptStateTreeView::HandleDetailsViewChangingProperties);
-	ScriptStateTreeViewModel->OnUpdateStateTree.AddSP(this, &SScriptStateTreeView::UpdateStateTree);
+	ScriptStateTreeViewModel->OnNodeAdded_Delegate.AddSP(this, &SScriptStateTreeView::HandleModelNodeAdded);
+	ScriptStateTreeViewModel->OnNodesMoved_Delegate.AddSP(this, &SScriptStateTreeView::HandleModelNodesMoved);
+	ScriptStateTreeViewModel->OnDetailsViewChangingProperties_Delegate.AddSP(this, &SScriptStateTreeView::HandleDetailsViewChangingProperties);
+	ScriptStateTreeViewModel->OnUpdateStateTree_Delegate.AddSP(this, &SScriptStateTreeView::UpdateStateTree);
 
 	TreeRoots.Empty();
-	TreeRoots.Add(ScriptStateTreeViewModel->GetTreeRoot());
+	TreeRoots.Append(ScriptStateTreeViewModel->GetTreeRoots());
 
 
 	TSharedRef<SScrollBar> HorizontalScrollBar = SNew(SScrollBar)
@@ -736,21 +826,17 @@ void SScriptStateTreeView::ReGenerateStateTree()
 
 	// Regenerate items
 	TreeRoots.Empty();
-	TreeRoots.Add(ScriptStateTreeViewModel->GetTreeRoot());
+	TreeRoots.Append(ScriptStateTreeViewModel->GetTreeRoots());
 	TreeViewWidget->SetTreeItemsSource(&TreeRoots);
 
-	// Expanded All Node
-	TSharedPtr<STreeView<TWeakObjectPtr<UStateTreeBaseNode>>> TreeView = TreeViewWidget;
-	TFunction<void(TArray<TObjectPtr<UStateTreeBaseNode>>&)> ExpandAllNodes = [&ExpandAllNodes, TreeView](TArray<TObjectPtr<UStateTreeBaseNode>>& Nodes) {
-		for (TObjectPtr<UStateTreeBaseNode>& Node : Nodes)
-		{
-			TreeView->SetItemExpansion(Node, true);
-			ExpandAllNodes(Node->Children);
-		}
-	};
+	if (!TreeRoots.IsEmpty())
+	{
+		// Expanded All Node
+		TSharedPtr<STreeView<TWeakObjectPtr<UStateTreeBaseNode>>> TreeView = TreeViewWidget;
 
-	TreeViewWidget->SetItemExpansion(TreeRoots[0], true);
-	ExpandAllNodes(TreeRoots[0]->Children);
+		TreeViewWidget->SetItemExpansion(TreeRoots[0], true);
+		UE::ScriptStateTree::Editor::ExpandAllNodes(TreeRoots[0]->Children, TreeView);
+	}
 
 	// Restore selected Node
 	TreeViewWidget->ClearSelection();
@@ -1437,7 +1523,7 @@ FReply SScriptStateTreeViewRow::HandleLinkedNodeMouseDoubleClick(const FGeometry
 	{
 		if (UStateTreeActionNode* ActionNode = Cast<UStateTreeActionNode>(WeakNode.Get()))
 		{
-			ScriptStateTreeViewModel->OnSpawnNodeGraph.Broadcast(ActionNode->EdGraph);
+			ScriptStateTreeViewModel->OnSpawnNodeGraph(ActionNode->EdGraph);
 		}
 	}
 	else if(WeakNode->NodeType == EScriptStateTreeNodeType::Shared)
@@ -1450,7 +1536,7 @@ FReply SScriptStateTreeViewRow::HandleLinkedNodeMouseDoubleClick(const FGeometry
 		if (Shared && Shared->SharedNode->NodeType == EScriptStateTreeNodeType::Action)
 		{
 			UStateTreeActionNode* ActionNode = Cast<UStateTreeActionNode>(Shared->SharedNode.Get());
-			ScriptStateTreeViewModel->OnSpawnNodeGraph.Broadcast(ActionNode->EdGraph);
+			ScriptStateTreeViewModel->OnSpawnNodeGraph(ActionNode->EdGraph);
 		}
 	}
 	return FReply::Handled();

@@ -29,6 +29,7 @@ public:
 
 	virtual void OnCompile() override;
 	virtual void NotifyGraphChanged(const FEdGraphEditAction& Action) override;
+	virtual void UpdateAsset(EUpdateFlags UpdateFlags = EUpdateFlags::RebuildGraph) override;
 
 	void CompileNode_Recursive(UStateAbilityScriptArchetype* ScriptArchetype, UGraphAbilityNode* RootGraphNode);
 	void Release();

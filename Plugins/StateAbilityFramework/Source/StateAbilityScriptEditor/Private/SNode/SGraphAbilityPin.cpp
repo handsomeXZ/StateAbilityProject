@@ -1,8 +1,16 @@
 #include "SNode/SGraphAbilityPin.h"
 
-void SGraphAbilityPin::Construct(const FArguments& InArgs, UEdGraphPin* InPin)
+#include "SGraphPanel.h"
+#include "SGraphNode.h"
+#include "Layout/Geometry.h"
+
+#include "Node/GraphAbilityNode_State.h"
+#include "Editor/StateAbilityEditorStyle.h"
+
+void SGraphAbilityPin::Construct(const FArguments& InArgs, TSharedPtr<SGraphNode> InOwnerNode, UEdGraphPin* InPin, bool InbIsOverlayPin /* = true */)
 {
-	this->SetCursor(EMouseCursor::Default);
+	OwnerNode = InOwnerNode;
+	bIsOverlayPin = InbIsOverlayPin;
 
 	bShowLabel = true;
 
@@ -12,13 +20,30 @@ void SGraphAbilityPin::Construct(const FArguments& InArgs, UEdGraphPin* InPin)
 	const UEdGraphSchema* Schema = GraphPinObj->GetSchema();
 	check(Schema);
 
+	TSharedPtr<SGraphAbilityPin> SelfWidget = SharedThis(this);
+
 	SBorder::Construct(SBorder::FArguments()
 		.BorderImage(this, &SGraphAbilityPin::GetPinBorder)
-		.BorderBackgroundColor(this, &SGraphAbilityPin::GetPinColor)
+		.BorderBackgroundColor_Lambda([SelfWidget, this]() {
+			if (SelfWidget.IsValid())
+			{
+				return GetTargetPinColor(SelfWidget);
+			}
+
+			return FSlateColor(FLinearColor::Transparent);
+		})
 		.OnMouseButtonDown(this, &SGraphAbilityPin::OnPinMouseDown)
-		.Cursor(this, &SGraphAbilityPin::GetPinCursor)
+		.Cursor(this, &SGraphAbilityPin::GetAbilityPinCursor)
 		.Padding(FMargin(10.0f))
 	);
+}
+
+int32 SGraphAbilityPin::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
+{
+	CacheAllottedGeometry_Position = AllottedGeometry.AbsolutePosition;
+	CacheAllottedGeometry_Scale = AllottedGeometry.Scale;
+
+	return SGraphPin::OnPaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
 }
 
 TSharedRef<SWidget>	SGraphAbilityPin::GetDefaultValueWidget()
@@ -28,19 +53,54 @@ TSharedRef<SWidget>	SGraphAbilityPin::GetDefaultValueWidget()
 
 const FSlateBrush* SGraphAbilityPin::GetPinBorder() const
 {
-	return FAppStyle::GetBrush(TEXT("Graph.StateNode.Body"));
+	return FStateAbilityEditorStyle::Get().GetBrush("Pin.Point");
 }
 
-FSlateColor SGraphAbilityPin::GetPinColor() const
+FSlateColor SGraphAbilityPin::GetTargetPinColor(TSharedPtr<SWidget> Widget) const
 {
-	return FSlateColor(IsHovered() ? FLinearColor(1.0f, 0.7f, 0.0f) : FLinearColor(0.02f, 0.02f, 0.02f));
+	if (!Widget.IsValid())
+	{
+		return FSlateColor(COLOR("218c74AF"));
+	}
+
+	bool bHightLight = Widget->IsHovered() || !GraphPinObj->LinkedTo.IsEmpty();
+
+	return FSlateColor(bHightLight ? COLOR("33d9b2FF") : COLOR("218c74AF"));
 }
 
+TOptional<EMouseCursor::Type> SGraphAbilityPin::GetAbilityPinCursor() const
+{
+	if (IsHovered())
+	{
+		if (bIsMovingLinks)
+		{
+			return EMouseCursor::GrabHandClosed;
+		}
+		else
+		{
+			return EMouseCursor::Crosshairs;
+		}
+	}
+	else
+	{
+		return EMouseCursor::Default;
+	}
+}
+
+FVector2D SGraphAbilityPin::GetOverlayPosition() const
+{
+	return FVector2D(CacheAllottedGeometry_Position);
+}
+
+float SGraphAbilityPin::GetOverlayScale() const
+{
+	return CacheAllottedGeometry_Scale;
+}
 
 /////////////////////////////////////////////////////
-// SGraphSASPinEntry
+// SGraphAbilityPinEntry
 
-void SGraphSASPinEntry::Construct(const FArguments& InArgs, UEdGraphPin* InPin)
+void SGraphAbilityPinEntry::Construct(const FArguments& InArgs, UEdGraphPin* InPin)
 {
 	SGraphPin::Construct(SGraphPin::FArguments(), InPin);
 
@@ -48,7 +108,7 @@ void SGraphSASPinEntry::Construct(const FArguments& InArgs, UEdGraphPin* InPin)
 	CachePinIcons();
 }
 
-void SGraphSASPinEntry::CachePinIcons()
+void SGraphAbilityPinEntry::CachePinIcons()
 {
 	CachedImg_Pin_ConnectedHovered = FAppStyle::GetBrush(TEXT("Graph.ExecPin.ConnectedHovered"));
 	CachedImg_Pin_Connected = FAppStyle::GetBrush(TEXT("Graph.ExecPin.Connected"));
@@ -56,12 +116,12 @@ void SGraphSASPinEntry::CachePinIcons()
 	CachedImg_Pin_Disconnected = FAppStyle::GetBrush(TEXT("Graph.ExecPin.Disconnected"));
 }
 
-TSharedRef<SWidget>	SGraphSASPinEntry::GetDefaultValueWidget()
+TSharedRef<SWidget>	SGraphAbilityPinEntry::GetDefaultValueWidget()
 {
 	return SNew(SSpacer);
 }
 
-const FSlateBrush* SGraphSASPinEntry::GetPinIcon() const
+const FSlateBrush* SGraphAbilityPinEntry::GetPinIcon() const
 {
 	const FSlateBrush* Brush = nullptr;
 
@@ -75,4 +135,133 @@ const FSlateBrush* SGraphSASPinEntry::GetPinIcon() const
 	}
 
 	return Brush;
+}
+
+//////////////////////////////////////////////////////////////////////////
+// SGraphAbilityStackedPin
+void SGraphAbilityStackedPin::Construct(const FArguments& InArgs, TSharedPtr<SGraphNode> InOwnerNode, UEdGraphPin* InPin, struct FStackedPinInfo& StackedPinInfo)
+{
+	bIsOverlayPin = true;
+	OwnerNode = InOwnerNode;
+
+	SBorder::Construct(SBorder::FArguments()
+		.Padding(0)
+		.BorderBackgroundColor(FLinearColor::Transparent)
+		[
+			SAssignNew(PinPanel, SHorizontalBox)
+		]
+	);
+
+	TSharedPtr<SGraphAbilityStackedPin> SelfWidget = SharedThis(this);
+
+	for (auto& PinInfo : StackedPinInfo.StackedEventNode)
+	{
+		TSharedPtr<SHorizontalBox> StackedPinWidget = SNew(SHorizontalBox);
+
+		TSharedPtr<STextBlock> PinNameWidget = SNew(STextBlock)
+			.Visibility(EVisibility::Collapsed)
+			.Text(FText::FromString(PinInfo.Value.ToString()));
+
+		StackedPinWidget->AddSlot()
+		.AutoWidth()
+		[
+			SNew(SBorder)
+			.Padding(FMargin(10.0f))
+			.BorderImage(this, &SGraphAbilityStackedPin::GetPinBorder)
+			.BorderBackgroundColor_Lambda([StackedPinWidget, SelfWidget, this]() {
+				if (SelfWidget.IsValid())
+				{
+					return GetStackedPinColor(StackedPinWidget);
+				}
+				return FSlateColor(FLinearColor::Transparent);
+			})
+		];
+		StackedPinWidget->AddSlot()
+		.AutoWidth()
+		.VAlign(VAlign_Center)
+		.HAlign(HAlign_Center)
+		[
+			PinNameWidget.ToSharedRef()
+		];
+
+		PinPanel->AddSlot()
+		.AutoWidth()
+		[
+			SNew(SBorder)
+			.Padding(0)
+			.BorderBackgroundColor(FLinearColor::Transparent)
+			.OnMouseButtonDown_Lambda([this, PinNameWidget](const FGeometry& SenderGeometry, const FPointerEvent& MouseEvent) {
+				if (!PinNameWidget.IsValid())
+				{
+					return FReply::Unhandled();
+				}
+				
+				if (PinNameWidget->GetVisibility() == EVisibility::Collapsed)
+				{
+					PinNameWidget->SetVisibility(EVisibility::HitTestInvisible);
+				}
+				else
+				{
+					PinNameWidget->SetVisibility(EVisibility::Collapsed);
+				}
+
+				OnStackedPinMouseDown(SenderGeometry, MouseEvent);
+				return FReply::Unhandled();
+			})
+			[
+				StackedPinWidget.ToSharedRef()
+			]
+		];
+
+		// @TODO：缺少显示当前Pin连接的StateTreeNode
+	}
+
+	bShowLabel = true;
+
+	GraphPinObj = InPin;
+	check(GraphPinObj != NULL);
+
+	const UEdGraphSchema* Schema = GraphPinObj->GetSchema();
+	check(Schema);
+
+	TSharedPtr<SHorizontalBox> PinWidget = SNew(SHorizontalBox);
+
+	PinWidget->AddSlot()
+	.AutoWidth()
+	[
+		SNew(SBorder)
+			.BorderImage(this, &SGraphAbilityStackedPin::GetPinBorder)
+			.BorderBackgroundColor_Lambda([PinWidget, SelfWidget, this]() {
+				if (SelfWidget.IsValid())
+				{
+					return GetTargetPinColor(PinWidget);
+				}
+				return FSlateColor(FLinearColor::Transparent);
+			})
+			.OnMouseButtonDown(this, &SGraphAbilityStackedPin::OnPinMouseDown)
+			.Cursor(this, &SGraphAbilityStackedPin::GetAbilityPinCursor)
+			.Padding(FMargin(10.0f))
+	];
+	
+
+	PinPanel->AddSlot()
+	.AutoWidth()
+	[
+		PinWidget.ToSharedRef()
+	];
+}
+
+FSlateColor SGraphAbilityStackedPin::GetStackedPinColor(TSharedPtr<SWidget> Widget) const
+{
+	if (!Widget.IsValid())
+	{
+		return FSlateColor(COLOR("84817aFF"));
+	}
+
+	return FSlateColor(Widget->IsHovered() ? COLOR("d1ccc0FF") : COLOR("84817aFF"));
+}
+
+FReply SGraphAbilityStackedPin::OnStackedPinMouseDown(const FGeometry& SenderGeometry, const FPointerEvent& MouseEvent)
+{
+	return FReply::Unhandled();
 }

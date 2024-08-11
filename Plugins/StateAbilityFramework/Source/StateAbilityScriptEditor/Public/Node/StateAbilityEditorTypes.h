@@ -20,5 +20,6 @@ class UStateAbilityEditorTypes : public UObject
 	static const FName PinCategory_Defualt;
 	static const FName PinCategory_Entry;
 	static const FName PinCategory_Exit;
-	static const FName PinCategory_Action;
+	static const FName PinCategory_Exec;
+	static const FName PinCategory_Event;
 };

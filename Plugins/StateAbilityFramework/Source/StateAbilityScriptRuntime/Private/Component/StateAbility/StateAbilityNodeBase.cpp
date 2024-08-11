@@ -80,19 +80,20 @@ TMap<FName, FConfigVars_EventSlot> UStateAbilityNodeBase::GetEventSlots()
 	return Result;
 }
 
-UStateAbilityNodeBase* UStateAbilityNodeBase::CreateInstance(UStateAbilityScript* Script, UClass* Class)
+UStateAbilityNodeBase* UStateAbilityNodeBase::CreateInstance(UStateAbilityScriptArchetype* ScriptArchetype, UClass* Class)
 {
-	if (!Script || !Class || !Class->IsChildOf(UStateAbilityNodeBase::StaticClass()))
+	if (!ScriptArchetype || !Class || !Class->IsChildOf(UStateAbilityNodeBase::StaticClass()))
 	{
 		return nullptr;
 	}
-	// 加入Script，方便后续清扫，不用担心序列化问题，因为没有RF_Standalone标记，所以这里是根据引用序列化的。
-	UStateAbilityNodeBase* Instance = NewObject<UStateAbilityNodeBase>(Script, Class);
+	// 加入ScriptArchetype，方便后续清扫，不用担心序列化问题，因为没有RF_Standalone标记，所以这里是根据引用序列化的。
+	UStateAbilityNodeBase* Instance = NewObject<UStateAbilityNodeBase>(ScriptArchetype, Class);
+	Instance->SetFlags(RF_Transactional);
 
 	Instance->OnCreatedInEditor();
 	Instance->ConfigVarsBag.EditorLoadOrAddData(Instance, Instance->GetDataStruct());
 
-	//Script->AddDataExportIndex(Instance->UniqueID, Instance->ConfigVarsBag.GetExportIndex());
+	//ScriptArchetype->AddDataExportIndex(Instance->UniqueID, Instance->ConfigVarsBag.GetExportIndex());
 
 	return Instance;
 }

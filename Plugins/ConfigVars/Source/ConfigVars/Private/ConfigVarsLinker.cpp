@@ -1,6 +1,7 @@
 ﻿#include "ConfigVarsLinker.h"
 
 #include "HAL/FileManagerGeneric.h"
+#include "UObject/ObjectSaveContext.h"
 
 #include "PrivateAccessor.h"
 #include "ConfigVarsTypes.h"
@@ -168,12 +169,12 @@ void UConfigVarsLinker::Serialize(FStructuredArchive::FRecord Record)
 			//return;
 		}
 
-		VerifyData(Ar, Cooking | PreSerialize,
-			[this](){
-				VerifyPendingRemovedExport();
-				VerifyAllExportLoaded();
-			}
-		);
+		//VerifyData(Ar, Cooking | PreSerialize,
+		//	[this]() {
+		//		VerifyPendingRemovedExport();
+		//		VerifyAllExportLoaded();
+		//	}
+		//);
 	}
 
 	Super::Serialize(Record);
@@ -216,6 +217,14 @@ bool UConfigVarsLinker::Rename(const TCHAR* NewName /* = nullptr */, UObject* Ne
 	bool bSuccess = Super::Rename(NewName, NewOuter, Flags);
 
 	return bSuccess;
+}
+
+void UConfigVarsLinker::PreSave(FObjectPreSaveContext SaveContext)
+{
+	Super::PreSave(SaveContext);
+
+	VerifyPendingRemovedExport();
+	VerifyAllExportLoaded();
 }
 
 void UConfigVarsLinker::SerializeHeadData(FStructuredArchive::FRecord Record)
@@ -978,7 +987,12 @@ FLinkerLoad* UConfigVarsLinker::CreateLinker_Sync()
 		// 这一步存在开销，比仅获取Linker开销高。
 		TRefCountPtr<FUObjectSerializeContext> LoadContext(FUObjectThreadContext::Get().GetSerializeContext());
 		FPackagePath Path = LinkerRoot->GetLoadedPath();
-		Linker = FLinkerLoad::CreateLinker(LoadContext, LinkerRoot, Path, LOAD_NoVerify, nullptr);
+		FPackagePath OutRealPathWithExtension;
+
+		bool bFound = FPackageName::DoesPackageExist(Path, true, &OutRealPathWithExtension);
+		check(bFound);
+
+		Linker = FLinkerLoad::CreateLinker(LoadContext, LinkerRoot, OutRealPathWithExtension, LOAD_NoVerify, nullptr);
 	}
 
 	return Linker;
@@ -1039,17 +1053,18 @@ FStructView UConfigVarsLinker::LoadOrAddData(FConfigVarsBag& ConfigVarsBag, cons
 					// Set up a load context
 					TRefCountPtr<FUObjectSerializeContext> LoadContext = ThreadContext.GetSerializeContext();
 					// Try to load.
+					FLinkerLoad* LinkerLoad = nullptr;
 					BeginLoad(LoadContext, *(GetPackage()->GetName()));
 					{
 						// 反序列化Object的数据
-						FLinkerLoad* LinkerLoad = CreateLinker_Sync();
+						LinkerLoad = CreateLinker_Sync();
 						check(LinkerLoad);
 
 						((FArchive*)LinkerLoad)->Seek(Export.SerialLocation);
 
 						FConfigVarsUtils::SerializeConfigVars(FStructuredArchiveFromArchive(*LinkerLoad).GetSlot().EnterRecord(), this, ExportData[InOutExportIndex]);
 					}
-					EndLoad(LoadContext);
+					EndLoad(LinkerLoad ? LinkerLoad->GetSerializeContext() : LoadContext.GetReference());
 
 					ExportDataOuter[InOutExportIndex] = Outermost;
 

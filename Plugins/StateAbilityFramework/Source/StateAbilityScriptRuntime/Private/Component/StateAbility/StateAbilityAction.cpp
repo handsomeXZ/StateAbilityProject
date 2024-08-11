@@ -29,7 +29,7 @@ void UStateAbilityAction::Execute(FActionExecContext& Conext) const
 
 	OnExecute(Conext);
 	
-	Conext.EnqueueImmediateEvent(Then_Event);
+	Conext.EnqueueImmediateEvent(ThenExec_Event);
 }
 UStateAbilityAction::UStateAbilityAction(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)

@@ -6,8 +6,10 @@
 #include "Node/StateAbilityEditorTypes.h"
 #include "Node/GraphAbilityNode_Entry.h"
 #include "Node/GraphAbilityNode_Action.h"
+#include "Node/GraphAbilityNode_State.h"
 #include "Component/StateAbility/StateAbilityNodeBase.h"
 #include "Component/StateAbility/StateAbilityAction.h"
+#include "Component/StateAbility/StateAbilityState.h"
 #include "StateAbilityScriptEditor.h"
 #include "SchemaAction/SGraphEdAbilitySchemaActions.h"
 
@@ -103,8 +105,11 @@ void UStateAbilityScriptEdGraphSchema::GetGraphContextActions(FGraphContextMenuB
 
 	const bool bNoParent = (ContextMenuBuilder.FromPin == NULL);
 	const bool bOnlyEntry = (PinCategory == UStateAbilityEditorTypes::PinCategory_Entry);
-	const bool bOnlyAction = (PinCategory == UStateAbilityEditorTypes::PinCategory_Action);
-	const bool bAllowAction = bNoParent || bOnlyEntry || bOnlyAction;
+	const bool bOnlyExec = (PinCategory == UStateAbilityEditorTypes::PinCategory_Exec);
+	const bool bOnlyEvent = (PinCategory == UStateAbilityEditorTypes::PinCategory_Event);
+
+	const bool bAllowAction = bNoParent || bOnlyEntry || bOnlyExec || bOnlyEvent;
+	const bool bAllowState = bNoParent || bOnlyEntry || bOnlyExec || bOnlyEvent;
 
 	FStateAbilityScriptEditorModule& EditorModule = FModuleManager::GetModuleChecked<FStateAbilityScriptEditorModule>(TEXT("StateAbilityScriptEditor"));
 	FGraphNodeClassHelper* ClassCache = EditorModule.GetClassCache().Get();
@@ -118,15 +123,36 @@ void UStateAbilityScriptEdGraphSchema::GetGraphContextActions(FGraphContextMenuB
 		{
 			const FText ActionTypeName = FText::FromString(FName::NameToDisplayString(ClassData.ToString(), false));
 
-			TSharedPtr<FSAbilitySchemaAction_NewNode> Action = TSharedPtr<FSAbilitySchemaAction_NewNode>(
-				new FSAbilitySchemaAction_NewNode(LOCTEXT("NewNode", "Action"), ActionTypeName, FText::GetEmpty(), 0)
+			TSharedPtr<FSAbilitySchemaAction_NewNode> ActionSchema = TSharedPtr<FSAbilitySchemaAction_NewNode>(
+				new FSAbilitySchemaAction_NewNode(LOCTEXT("NewNode", "ActionSchema"), ActionTypeName, FText::GetEmpty(), 0)
 			);
 			UGraphAbilityNode_Action* GraphNode = NewObject<UGraphAbilityNode_Action>(ContextMenuBuilder.OwnerOfTemporaries);
 			GraphNode->NodeClass = ClassData.GetClass();
 
-			Action->NodeTemplate = GraphNode;
+			ActionSchema->NodeTemplate = GraphNode;
 
-			ContextMenuBuilder.AddAction(Action);
+			ContextMenuBuilder.AddAction(ActionSchema);
+		}
+	}
+
+	if (bAllowState)
+	{
+		TArray<FGraphNodeClassData> GatheredClasses;
+		ClassCache->GatherClasses(UStateAbilityState::StaticClass(), GatheredClasses);
+
+		for (auto& ClassData : GatheredClasses)
+		{
+			const FText StateTypeName = FText::FromString(FName::NameToDisplayString(ClassData.ToString(), false));
+
+			TSharedPtr<FSAbilitySchemaState_NewNode> StateSchema = TSharedPtr<FSAbilitySchemaState_NewNode>(
+				new FSAbilitySchemaState_NewNode(LOCTEXT("NewNode", "StateSchema"), StateTypeName, FText::GetEmpty(), 0)
+			);
+			UGraphAbilityNode_State* GraphNode = NewObject<UGraphAbilityNode_State>(ContextMenuBuilder.OwnerOfTemporaries);
+			GraphNode->NodeClass = ClassData.GetClass();
+
+			StateSchema->NodeTemplate = GraphNode;
+
+			ContextMenuBuilder.AddAction(StateSchema);
 		}
 	}
 }
@@ -189,10 +215,10 @@ const FPinConnectionResponse UStateAbilityScriptEdGraphSchema::CanCreateConnecti
 	}
 
 	const bool bPinAIsEntry = PinA->PinType.PinCategory == UStateAbilityEditorTypes::PinCategory_Entry;
-	const bool bPinAIsAction = PinA->PinType.PinCategory == UStateAbilityEditorTypes::PinCategory_Action;
+	const bool bPinAIsAction = PinA->PinType.PinCategory == UStateAbilityEditorTypes::PinCategory_Exec;
 
 	const bool bPinBIsEntry = PinB->PinType.PinCategory == UStateAbilityEditorTypes::PinCategory_Entry;
-	const bool bPinBIsAction = PinB->PinType.PinCategory == UStateAbilityEditorTypes::PinCategory_Action;
+	const bool bPinBIsAction = PinB->PinType.PinCategory == UStateAbilityEditorTypes::PinCategory_Exec;
 
 	// check for cycles
 	StateAbilityScriptEdGraphSchemaUtils::FNodeVisitorCycleChecker CycleChecker;

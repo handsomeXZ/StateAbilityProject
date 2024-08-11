@@ -2,6 +2,9 @@
 
 #include "Kismet2/KismetEditorUtilities.h"
 
+#include "StateAbilityScriptEditorData.h"
+#include "Component/StateAbility/Script/StateAbilityScriptArchetype.h"
+
 #define LOCTEXT_NAMESPACE "GraphAbilityNode"
 
 void UGraphAbilityNode::InitializeNode(UEdGraph* InGraph)
@@ -45,6 +48,21 @@ bool UGraphAbilityNode::CanUserDeleteNode() const
 void UGraphAbilityNode::DestroyNode()
 {
 	UEdGraphNode::DestroyNode();
+
+	UStateAbilityScriptArchetype* ScriptArchetype = GetGraph()->GetTypedOuter<UStateAbilityScriptArchetype>();
+	TSharedPtr<FAbilityScriptViewModel> ScriptViewModel = Cast<UStateAbilityScriptEditorData>(ScriptArchetype->EditorData)->GetScriptViewModel();
+	
+	for (UEdGraphPin* Pin : Pins)
+	{
+		ScriptViewModel->ClearRecordedEventslot(Pin);
+	}
+}
+
+void UGraphAbilityNode::PostEditUndo()
+{
+	Super::PostEditUndo();
+
+	ResetNodeOwner();
 }
 
 void UGraphAbilityNode::PostCopyNode()
@@ -65,12 +83,10 @@ void UGraphAbilityNode::PrepareForCopying()
 
 void UGraphAbilityNode::ResetNodeOwner()
 {
-	if (NodeInstance)
+	if (IsValid(NodeInstance))
 	{
-		UEdGraph* MyGraph = GetGraph();
-
-		// 与 SCT不同的是，SDT不直接保存NodeInstance（仅存在于Editor状态下的Graph内）
-		NodeInstance->Rename(NULL, MyGraph, REN_DontCreateRedirectors | REN_DoNotDirty);
+		UStateAbilityScriptArchetype* ScriptArchetype = GetGraph()->GetTypedOuter<UStateAbilityScriptArchetype>();
+		NodeInstance->Rename(NULL, ScriptArchetype, REN_DontCreateRedirectors | REN_DoNotDirty);
 		NodeInstance->ClearFlags(RF_Transient);
 	}
 }

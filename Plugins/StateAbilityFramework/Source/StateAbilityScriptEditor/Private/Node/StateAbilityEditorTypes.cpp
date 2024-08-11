@@ -7,7 +7,8 @@
 const FName UStateAbilityEditorTypes::PinCategory_Defualt("DefualtNode");
 const FName UStateAbilityEditorTypes::PinCategory_Entry("EntryNode");
 const FName UStateAbilityEditorTypes::PinCategory_Exit("ExitNode");
-const FName UStateAbilityEditorTypes::PinCategory_Action("ActionNode");
+const FName UStateAbilityEditorTypes::PinCategory_Exec("ExecNode");
+const FName UStateAbilityEditorTypes::PinCategory_Event("EventNode");
 UStateAbilityEditorTypes::UStateAbilityEditorTypes(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
 }

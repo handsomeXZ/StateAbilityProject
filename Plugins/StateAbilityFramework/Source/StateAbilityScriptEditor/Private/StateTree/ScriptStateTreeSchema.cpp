@@ -83,13 +83,15 @@ bool FScriptStateTreeMenuSchemaState::PerformAction(TSharedPtr<FScriptStateTreeS
 	{
 		return false;
 	}
+	const FScopedTransaction Transaction(LOCTEXT("AddNode", "Add Node"));
+
 	// 延迟初始化
 	UStateTreeStateNode* NewStateNode = Cast<UStateTreeStateNode>(ScriptStateTreeViewModel->CreateNewNode(ParentNode, EScriptStateTreeNodeType::State, true));
 
-	NewStateNode->StateInstance = UStateAbilityNodeBase::CreateInstance<UStateAbilityState>(Cast<UStateAbilityScript>(ScriptArchetype->GeneratedScriptClass->GetDefaultObject(false)), SchemaItem->StateClass);
+	NewStateNode->StateInstance = UStateAbilityNodeBase::CreateInstance<UStateAbilityState>(ScriptArchetype, SchemaItem->StateClass);
 
 	NewStateNode->Init(ScriptStateTreeViewModel);
-	ScriptStateTreeViewModel->OnNodeAdded.Broadcast(ParentNode, NewStateNode);
+	ScriptStateTreeViewModel->OnNodeAdded(ParentNode, NewStateNode);
 
 	return true;
 }
@@ -401,13 +403,15 @@ bool FScriptStateTreeMenuSchemaShared::PerformAction(TSharedPtr<FScriptStateTree
 	{
 		return false;
 	}
+	const FScopedTransaction Transaction(LOCTEXT("AddNode", "Add Node"));
+
 	// 延迟初始化
 	UStateTreeSharedNode* NewSharedNode = Cast<UStateTreeSharedNode>(ScriptStateTreeViewModel->CreateNewNode(ParentNode, EScriptStateTreeNodeType::Shared, true));
 
 	NewSharedNode->SharedNode = SchemaItem->WeakSharedNode.Get();
 	NewSharedNode->Init(ScriptStateTreeViewModel);
 
-	ScriptStateTreeViewModel->OnNodeAdded.Broadcast(ParentNode, NewSharedNode);
+	ScriptStateTreeViewModel->OnNodeAdded(ParentNode, NewSharedNode);
 
 	return true;
 }
@@ -474,7 +478,10 @@ void SScriptStateTreeSchemaSharedMenu::RefreshAllActions(bool bPreserveExpansion
 	TSharedPtr<FScriptStateTreeViewModel> ViewModel = MenuSchema->GetViewModel();
 	TArray<TObjectPtr<UStateTreeBaseNode>> AllNodes;
 
-	MenuSchema->GetAllStateTreeCanSharedNode(ViewModel->GetTreeRoot(), AllNodes);
+	for (UStateTreeBaseNode* Node : ViewModel->GetTreeRoots())
+	{
+		MenuSchema->GetAllStateTreeCanSharedNode(Node, AllNodes);
+	}
 
 
 	for (UStateTreeBaseNode* Node : AllNodes)

@@ -113,7 +113,20 @@ FStateAbilityEditor::FStateAbilityEditor()
 	: FWorkflowCentricApplication()
 	, StateAbilityScriptArchetype(nullptr)
 {
-	
+	UEditorEngine* Editor = (UEditorEngine*)GEngine;
+	if (Editor != NULL)
+	{
+		Editor->RegisterForUndo(this);
+	}
+}
+
+FStateAbilityEditor::~FStateAbilityEditor()
+{
+	UEditorEngine* Editor = (UEditorEngine*)GEngine;
+	if (Editor)
+	{
+		Editor->UnregisterForUndo(this);
+	}
 }
 
 void FStateAbilityEditor::RegisterTabSpawners(const TSharedRef<class FTabManager>& InTabManager)
@@ -138,9 +151,38 @@ void FStateAbilityEditor::SetCurrentMode(FName NewMode)
 	FWorkflowCentricApplication::SetCurrentMode(NewMode);
 }
 
+void FStateAbilityEditor::PostUndo(bool bSuccess)
+{
+	if (bSuccess)
+	{
+		// Clear selection, to avoid holding refs to nodes that go away
+		if (NodeGraphEditor.IsValid())
+		{
+			NodeGraphEditor->ClearSelectionSet();
+			NodeGraphEditor->NotifyGraphChanged();
+		}
+		FSlateApplication::Get().DismissAllMenus();
+	}
+}
+
+void FStateAbilityEditor::PostRedo(bool bSuccess)
+{
+	if (bSuccess)
+	{
+		// Clear selection, to avoid holding refs to nodes that go away
+		if (NodeGraphEditor.IsValid())
+		{
+			NodeGraphEditor->ClearSelectionSet();
+			NodeGraphEditor->NotifyGraphChanged();
+		}
+		FSlateApplication::Get().DismissAllMenus();
+	}
+}
+
 TSharedRef<SWidget> FStateAbilityEditor::SpawnStateTreeEdTab()
 {
-	return SAssignNew(StateTreeEditor, SScriptStateTreeView, StateTreeViewModel, ToolkitCommands);
+	// return SAssignNew(StateTreeEditor, SScriptStateTreeView, StateTreeViewModel, ToolkitCommands);
+	return SNew(SHorizontalBox);
 }
 
 TSharedRef<SWidget> FStateAbilityEditor::SpawnConfigVarsDetailsTab()
@@ -210,12 +252,14 @@ void FStateAbilityEditor::InitializeAssetEditor(const EToolkitMode::Type Mode, c
 			EditorData->Init();
 		}
 
-		StateTreeViewModel = MakeShareable(new FScriptStateTreeViewModel());
-		StateTreeViewModel->Init(EditorData);
+		EditorData->OpenEdit(ToolkitCommands);
+		EditorData->GetScriptViewModel()->OnStateTreeNodeSelected.AddSP(this, &FStateAbilityEditor::HandleSelectedNodesChanged);
+		//StateTreeViewModel = MakeShareable(new FScriptStateTreeViewModel());
+		//StateTreeViewModel->Init(EditorData);
 
-		StateTreeViewModel->OnSelectionChanged.AddSP(this, &FStateAbilityEditor::HandleSelectedNodesChanged);
-		StateTreeViewModel->OnSpawnNodeGraph.AddSP(this, &FStateAbilityEditor::HandleSpawnNodeGraph);
-		StateTreeViewModel->OnNodeRelease.AddSP(this, &FStateAbilityEditor::HandleReleaseNode);
+		//StateTreeViewModel->OnSelectionChanged.AddSP(this, &FStateAbilityEditor::HandleSelectedNodesChanged);
+		//StateTreeViewModel->OnSpawnNodeGraph.AddSP(this, &FStateAbilityEditor::HandleSpawnNodeGraph);
+		//StateTreeViewModel->OnNodeRelease.AddSP(this, &FStateAbilityEditor::HandleReleaseNode);
 	}
 
 	TArray<UObject*> ObjectsToEdit;
@@ -242,7 +286,7 @@ void FStateAbilityEditor::InitializeAssetEditor(const EToolkitMode::Type Mode, c
 
 	if (StateAbilityScriptArchetype != nullptr)
 	{
-		SetCurrentMode(StateTreeModeName);
+		SetCurrentMode(NodeGraphModeName);
 	}
 
 
@@ -418,6 +462,28 @@ TSharedRef<SWidget> FStateAbilityEditor::HandleCreateNewStateMenu() const
 /************************************************************************/
 void FStateAbilityEditor::HandleSelectedNodesChanged(const TSet<class UObject*>& NewSelection)
 {
+	TSet<UObject*> OldSelections;
+	for (TWeakObjectPtr<UObject> SelectItem : LastSelections)
+	{
+		if (!SelectItem.IsValid())
+		{
+			continue;
+		}
+		OldSelections.Add(SelectItem.Get());
+	}
+
+	// 记录选择项，用于代替GraphEditor->GetSelectedNodes()，因为此方法只能获取UEdGraphNode类型
+	LastSelections.Empty(NewSelection.Num());
+	for (UObject* SelectItem : NewSelection)
+	{
+		LastSelections.Add(SelectItem);
+		
+		if (OldSelections.Contains(SelectItem))
+		{
+			OldSelections.Remove(SelectItem);
+		}
+	}
+
 	// 只允许处理一个选项的
 	UObject* Selection = nullptr;
 	if (NewSelection.Num() == 1)
@@ -433,6 +499,8 @@ void FStateAbilityEditor::HandleSelectedNodesChanged(const TSet<class UObject*>&
 		{
 			AttributeDetailsView->SetObject(Selection);
 		}
+
+		LastSelections.Add(Selection);
 	}
 	else
 	{
@@ -443,6 +511,21 @@ void FStateAbilityEditor::HandleSelectedNodesChanged(const TSet<class UObject*>&
 			UStateAbilityScriptArchetype* ScriptArchetype = Cast<UStateAbilityScriptArchetype>(GetCurrentEditObject());
 			AttributeDetailsView->SetObject(ScriptArchetype->GetDefaultScript());
 		}
+
+		// 没什么关注的目标
+		LastSelections.Reset();
+	}
+
+	for (UObject* OldSelectItem : OldSelections)
+	{
+		// 剔除之前选中的StateTreeView
+		if (UStateTreeBaseNode* StateTreeNode = Cast<UStateTreeBaseNode>(OldSelectItem))
+		{
+			if (IsValid(StateTreeNode) && StateTreeNode->GetStateTreeViewModel().IsValid())
+			{
+				StateTreeNode->GetStateTreeViewModel()->ClearSelection(OldSelectItem);
+			}
+		}
 	}
 }
 
@@ -450,22 +533,22 @@ void FStateAbilityEditor::HandleSpawnNodeGraph(UEdGraph* EdGraph)
 {
 	if (EdGraph)
 	{
-		CurrentEdGraph = EdGraph;
-		SetCurrentMode(NodeGraphModeName);
+		//CurrentEdGraph = EdGraph;
+		//SetCurrentMode(NodeGraphModeName);
 	}
 }
 
 void FStateAbilityEditor::HandleReleaseNode(UStateTreeBaseNode* ReleasedNode)
 {
-	if (ReleasedNode->NodeType == EScriptStateTreeNodeType::Action)
-	{
-		UStateTreeActionNode* ActionNode = CastChecked<UStateTreeActionNode>(ReleasedNode);
-		
-		if (CurrentEdGraph.Get() == ActionNode->EdGraph)
-		{
-			CurrentEdGraph = nullptr;
-		}
-	}
+	//if (ReleasedNode->NodeType == EScriptStateTreeNodeType::Action)
+	//{
+	//	UStateTreeActionNode* ActionNode = CastChecked<UStateTreeActionNode>(ReleasedNode);
+
+	//	if (CurrentEdGraph.Get() == ActionNode->EdGraph)
+	//	{
+	//		CurrentEdGraph = nullptr;
+	//	}
+	//}
 }
 
 /************************************************************************/
@@ -477,8 +560,13 @@ UEdGraph* FStateAbilityEditor::GetCurrentEdGraph()
 	{
 		return CurrentEdGraph.Get();
 	}
-
-	return nullptr;
+	else
+	{
+		UStateAbilityScriptArchetype* ScriptArchetype = Cast<UStateAbilityScriptArchetype>(GetCurrentEditObject());
+		UStateAbilityScriptEditorData* EditorData = Cast<UStateAbilityScriptEditorData>(ScriptArchetype->EditorData);
+		CurrentEdGraph = EditorData->GetStateTreeGraph();
+		return CurrentEdGraph.Get();
+	}
 }
 
 FGraphPanelSelectionSet FStateAbilityEditor::GetSelectedNodes() const
@@ -487,6 +575,33 @@ FGraphPanelSelectionSet FStateAbilityEditor::GetSelectedNodes() const
 	if (CurrentGraphEditor)
 	{
 		CurrentSelection = CurrentGraphEditor->GetSelectedNodes();
+	}
+
+	return CurrentSelection;
+}
+
+FGraphPanelSelectionSet FStateAbilityEditor::GetSelectedObjects() const
+{
+	FGraphPanelSelectionSet CurrentSelection;
+
+	bool bHasImportantObj = false;
+	for (TWeakObjectPtr<UObject> SelectItem : LastSelections)
+	{
+		if (SelectItem.IsValid())
+		{
+			UObject* SelectObj = SelectItem.Get();
+			if (UStateTreeBaseNode* StateTreeNode = Cast<UStateTreeBaseNode>(SelectObj))
+			{
+				bHasImportantObj = true;
+			}
+			CurrentSelection.Add(SelectObj);
+		}
+	}
+
+	// 如果有需要特别关注的对象被选中，则不再关注GraphNode
+	if (!bHasImportantObj)
+	{
+		CurrentSelection.Append(CurrentGraphEditor->GetSelectedNodes());
 	}
 
 	return CurrentSelection;
@@ -514,15 +629,17 @@ void FStateAbilityEditor::DeleteSelectedNodes()
 			return;
 		}
 
+		UStateAbilityScriptEditorData* EditorData = Cast<UStateAbilityScriptEditorData>(StateAbilityScriptArchetype->EditorData);
+
 		const FScopedTransaction Transaction(FGenericCommands::Get().Delete->GetDescription());
 		CurrentGraphEditor->GetCurrentGraph()->Modify();
 
-		const FGraphPanelSelectionSet SelectedNodes = CurrentGraphEditor->GetSelectedNodes();
+		const FGraphPanelSelectionSet SelectedNodes = GetSelectedObjects();
 		CurrentGraphEditor->ClearSelectionSet();
 
-		for (FGraphPanelSelectionSet::TConstIterator NodeIt(SelectedNodes); NodeIt; ++NodeIt)
+		for (FGraphPanelSelectionSet::TConstIterator SelectedIter(SelectedNodes); SelectedIter; ++SelectedIter)
 		{
-			if (UEdGraphNode* Node = Cast<UEdGraphNode>(*NodeIt))
+			if (UEdGraphNode* Node = Cast<UEdGraphNode>(*SelectedIter))
 			{
 				if (Node->CanUserDeleteNode())
 				{
@@ -536,37 +653,35 @@ void FStateAbilityEditor::DeleteSelectedNodes()
 					Node->DestroyNode();
 				}
 			}
+			else if (UStateTreeBaseNode* StateTreeNode = Cast<UStateTreeBaseNode>(*SelectedIter))
+			{
+				if (IsValid(StateTreeNode) && StateTreeNode->GetStateTreeViewModel().IsValid())
+				{
+					StateTreeNode->GetStateTreeViewModel()->DeleteSelectedNode();
+				}
+			}
 		}
 	}
-	else if (GetCurrentMode() == StateTreeModeName)
-	{
-		StateTreeViewModel->DeleteSelectedNode();
-	}
-
 }
 
 bool FStateAbilityEditor::CanDeleteNodes() const
 {
 	if (GetCurrentMode() == NodeGraphModeName)
 	{
-		const FGraphPanelSelectionSet SelectedNodes = GetSelectedNodes();
+		const FGraphPanelSelectionSet SelectedNodes = GetSelectedObjects();
 		for (FGraphPanelSelectionSet::TConstIterator SelectedIter(SelectedNodes); SelectedIter; ++SelectedIter)
 		{
-			UEdGraphNode* Node = Cast<UEdGraphNode>(*SelectedIter);
-			if (Node && Node->CanUserDeleteNode())
+			if (UEdGraphNode* Node = Cast<UEdGraphNode>(*SelectedIter))
 			{
-				return true;
+				return Node->CanUserDeleteNode();
+			}
+			else if (UStateTreeBaseNode* StateTreeNode = Cast<UStateTreeBaseNode>(*SelectedIter))
+			{
+				return StateTreeNode->CanReleaseNode();
 			}
 		}
 	}
-	else if (GetCurrentMode() == StateTreeModeName)
-	{
-		if (StateTreeViewModel.IsValid())
-		{
-			return StateTreeViewModel->HasSelection();
-		}
-	}
-	
+
 
 	return false;
 }
@@ -932,10 +1047,6 @@ void FStateAbilityEditor::OnClose()
 	{
 		StateAbilityScriptArchetype->EditorData;
 	}
-	if (StateTreeViewModel.IsValid())
-	{
-		StateTreeViewModel->OnEditorClose.Broadcast();
-	}
 
 	FWorkflowCentricApplication::OnClose();
 }
@@ -957,20 +1068,7 @@ void FStateAbilityEditor::OnFinishedChangingProperties(const FPropertyChangedEve
 	{
 		MyGraphEditor = NodeGraphEditor;
 	}
-	else
-	{
-		if (GetCurrentMode() == StateTreeModeName && StateTreeViewModel.IsValid())
-		{
-			const TArray<TWeakObjectPtr<UObject>> Selections = GetCurrentDetailsView()->GetSelectedObjects();
-			if (Selections.Num() == 1)
-			{
-				StateTreeViewModel->OnDetailsViewChangingProperties.Broadcast(Selections[0].Get());
-			}
-		}
-		return;
-	}
-	
-	
+
 	UEdGraph* EdGraph = MyGraphEditor->GetCurrentGraph();
 	UStateAbilityScriptGraph* SDTGraph = Cast<UStateAbilityScriptGraph>(EdGraph);
 	if (SDTGraph)
@@ -1006,11 +1104,6 @@ void FStateAbilityEditor::OnCompile()
 		if (UStateAbilityGraph* SAGraph = Cast<UStateAbilityGraph>(CurrentEdGraph))
 		{
 			SAGraph->OnCompile();
-		}
-
-		if (StateTreeViewModel.IsValid())
-		{
-			StateTreeViewModel->OnUpdateStateTree.Broadcast();
 		}
 	}
 }

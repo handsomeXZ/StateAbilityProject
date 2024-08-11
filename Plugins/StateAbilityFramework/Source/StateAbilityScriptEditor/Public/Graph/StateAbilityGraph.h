@@ -11,6 +11,11 @@
 
 class UObject;
 
+enum EUpdateFlags
+{
+	RebuildGraph = 0,
+};
+
 UCLASS(MinimalAPI)
 class UStateAbilityGraph : public UEdGraph
 {
@@ -18,15 +23,19 @@ class UStateAbilityGraph : public UEdGraph
 
 	virtual void Init();
 	virtual void OnNodesPasted(const FString& ImportStr);
-	virtual void UpdateAsset(int32 UpdateFlags = 0) {}
+	virtual void UpdateAsset(EUpdateFlags UpdateFlags = EUpdateFlags::RebuildGraph) {}
 	virtual void OnCompile() {}
 
-	void UpdateAsset_Internal(int32 UpdateFlags = 0);
+	void UpdateAsset_Internal(EUpdateFlags UpdateFlags = EUpdateFlags::RebuildGraph);
 
 	bool IsLocked() const;
 	void LockUpdates();
 	void UnlockUpdates();
 	void OnSave();
+
+protected:
+
+	virtual void PostEditUndo() override;
 
 private:
 

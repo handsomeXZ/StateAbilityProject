@@ -141,15 +141,6 @@ bool FBitArray::Clear()
     return false;
 }
 
-void FBitArray::Reset(int32 Len)
-{
-    delete[] BitData;
-	BitLength = Len;
-	BitSize = (Len + WordSize - 1) / WordSize;
-	BitData = new WordType[BitSize];
-	FMemory::Memset(BitData, 0, sizeof(WordType)* BitSize);
-}
-
 bool FBitArray::MarkAll()
 {
     if (BitSize <= 0)

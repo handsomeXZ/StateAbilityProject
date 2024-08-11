@@ -20,10 +20,16 @@ public:
     FORCEINLINE bool Remove(int32 Index);
     bool RemoveRange(int32 BeginIndex, int32 EndIndex);
     FORCEINLINE bool Clear();
-    FORCEINLINE void Reset(int32 Len);
     FORCEINLINE bool MarkAll();
     FORCEINLINE bool IsEmpty() const;
     FORCEINLINE int32 GetSize() const;
+	FORCEINLINE void Reset(int32 Len) {
+		delete[] BitData;
+		BitLength = Len;
+		BitSize = (Len + WordSize - 1) / WordSize;
+		BitData = new WordType[BitSize];
+		FMemory::Memset(BitData, 0, sizeof(WordType) * BitSize);
+	}
 
     FORCEINLINE FBitArray& operator = (const FBitArray& Other);
     FORCEINLINE FBitArray& operator = (FBitArray&& Other);

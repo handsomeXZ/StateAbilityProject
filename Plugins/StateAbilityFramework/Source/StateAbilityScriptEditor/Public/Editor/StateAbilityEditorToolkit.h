@@ -2,20 +2,27 @@
 
 #include "CoreMinimal.h"
 #include "WorkflowOrientedApp/WorkflowCentricApplication.h"
+#include "EditorUndoClient.h"
 
 class SScriptStateTreeView;
 class FScriptStateTreeViewModel;
 class UStateTreeBaseNode;
 
-/**
- * 先基于FWorkflowCentricApplication来开发，因为后期可能随时转为多Mode编辑器
- */
+/************************************************************************/
+/*																		*/
+/*	拓展守则																*/
+/*																		*/
+/*	1. 对Selection的处理一律使用GetSelectedObjects，而不是GetSelectedNodes，	*/
+/*		同时需要处理好非UEdGraphNode类型SelectItem的复制、粘贴、删除等。		*/
+/*																		*/
+/*																		*/
+/************************************************************************/
 
-class FStateAbilityEditor : public FWorkflowCentricApplication
+class FStateAbilityEditor : public FWorkflowCentricApplication, public FEditorUndoClient
 {
 public:
 	FStateAbilityEditor();
-	virtual ~FStateAbilityEditor() {};
+	virtual ~FStateAbilityEditor();
 
 	static const FName StateTreeEditorTab;
 	static const FName NodeGraphEditorTab;
@@ -42,6 +49,11 @@ public:
 	virtual void SetCurrentMode(FName NewMode) override;
 	//~ End FWorkflowCentricApplication Interface
 
+	//~ Begin FEditorUndoClient Interface
+	virtual void PostUndo(bool bSuccess) override;
+	virtual void PostRedo(bool bSuccess) override;
+	// End of FEditorUndoClient
+
 	// @todo This is a hack for now until we reconcile the default toolbar with application modes [duplicated from counterpart in Blueprint Editor]
 	void RegisterToolbarTab(const TSharedRef<class FTabManager>& TabManager);
 
@@ -56,7 +68,9 @@ public:
 	UEdGraph* GetCurrentEdGraph();
 	TSharedPtr<SGraphEditor> GetCurrentGraphEditor() { return CurrentGraphEditor; }
 
-	FGraphPanelSelectionSet GetSelectedNodes() const;
+	FGraphPanelSelectionSet GetSelectedNodes() const;	// 仅包含UEdGraphNode类型	(少用)
+	FGraphPanelSelectionSet GetSelectedObjects() const;	// 包含所有Selection的目标
+
 	virtual void BindCommonCommands();
 	// Delegates for graph editor commands
 	void SelectAllNodes();
@@ -123,28 +137,30 @@ protected:
 	void FixupPastedNodes(const TSet<UEdGraphNode*>& NewPastedGraphNodes, const TMap<FGuid/*New*/, FGuid/*Old*/>& NewToOldNodeMapping);
 	
 private:
+	/* The Asset being edited */
+	class UStateAbilityScriptArchetype* StateAbilityScriptArchetype;
+
+	//////////////////////////////////////////////////////////////////////////
+
+	/** Property Details View */
+	TSharedPtr<class IDetailsView> ConfigVarsDetailsView;
+	/** Attribute Details View */
+	TSharedPtr<class SAttributeDetailsView> AttributeDetailsView;
+
+	//////////////////////////////////////////////////////////////////////////
+
+	TSet<TWeakObjectPtr<UObject>> LastSelections;	// 并不一定是UEdGraphNode
+
+	//////////////////////////////////////////////////////////////////////////
+
 	/** Tab's Content: SGraphEditor */
 	TSharedPtr<SGraphEditor> NodeGraphEditor;
 	TSharedPtr<SScriptStateTreeView> StateTreeEditor;
 	TSharedPtr<SGraphEditor> CurrentGraphEditor;
 
 	TWeakObjectPtr<UEdGraph> CurrentEdGraph;
-
-	/** Property Details View */
-	TSharedPtr<class IDetailsView> ConfigVarsDetailsView;
-
-	/** Attribute Details View */
-	TSharedPtr<class SAttributeDetailsView> AttributeDetailsView;
-
-	/* The Asset being edited */
-	class UStateAbilityScriptArchetype* StateAbilityScriptArchetype;
-
-	/* View Model */
-	TSharedPtr<FScriptStateTreeViewModel> StateTreeViewModel;
-
 	/** The command list for this editor */
 	TSharedPtr<FUICommandList> GraphEditorCommands;
-
 	TSharedPtr<class FStateAbilityEditorToolbar> ToolbarBuilder;
 
 };

@@ -17,7 +17,7 @@ UStateAbilityGraph::UStateAbilityGraph(const FObjectInitializer& ObjectInitializ
 	bLockUpdates = false;
 }
 
-void UStateAbilityGraph::UpdateAsset_Internal(int32 UpdateFlags)
+void UStateAbilityGraph::UpdateAsset_Internal(EUpdateFlags UpdateFlags)
 {
 	if (bLockUpdates)
 	{
@@ -58,6 +58,14 @@ void UStateAbilityGraph::UnlockUpdates()
 void UStateAbilityGraph::OnSave()
 {
 	UpdateAsset_Internal();
+}
+
+void UStateAbilityGraph::PostEditUndo()
+{
+	Super::PostEditUndo();
+
+	UpdateAsset_Internal();
+	Modify();
 }
 
 #undef LOCTEXT_NAMESPACE

@@ -15,6 +15,7 @@ typedef TMap<int32, UObject*> FImportObjectMap;
 DECLARE_DELEGATE_OneParam(FLoadConfigVarsAsyncDelegate, TArray<FStructView>);
 
 class UConfigVarsLinkerEditorData;
+class FObjectPreSaveRootContext;
 
 struct FConfigVarsImport
 {
@@ -92,6 +93,13 @@ class CONFIGVARS_API UConfigVarsLinker : public UObject
 public:
 	virtual void Serialize(FStructuredArchive::FRecord Record) override final;
 	virtual bool Rename(const TCHAR* NewName = nullptr, UObject* NewOuter = nullptr, ERenameFlags Flags = REN_None) override;
+
+	/**
+	 * @TODO：在PreSave中对未加载的资源进行了完整加载，但是在PreSave期间加载的UObject不会再执行PreSave。
+	 * 解决方案：在编辑器中打开资源时，预先把所有默认实例化的UObject先加载完毕。
+	 * 参考：UObject::PreSave(...)
+	 */
+	virtual void PreSave(FObjectPreSaveContext SaveContext) override;
 
 	// 序列化为Import（这里记录的ImportObject，仅会在对应的ExportObject加载前才会被加载）
 	int32 ImportObject(const UObject* ImportObj);

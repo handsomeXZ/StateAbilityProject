@@ -38,9 +38,6 @@ public:
 	void Execute(FActionExecContext& Conext) const;
 	virtual void OnExecute(FActionExecContext& Conext) const {}
 
-private:
-	UPROPERTY(meta = (DisplayName = "Exec"))
-	FConfigVars_EventSlot Then_Event;
 };
 
 // 特殊的Action，在运行时并不会包含任何数据，仅作为标记存在。

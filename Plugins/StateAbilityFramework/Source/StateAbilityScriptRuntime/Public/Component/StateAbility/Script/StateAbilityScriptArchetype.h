@@ -16,7 +16,7 @@ UCLASS()
 class STATEABILITYSCRIPTRUNTIME_API UStateAbilityScriptArchetype : public UObject
 {
 	GENERATED_UCLASS_BODY()
-	public:
+public:
 	UPROPERTY()
 	uint32 RootNodeID;
 	UPROPERTY()

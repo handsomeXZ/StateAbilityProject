@@ -6,6 +6,7 @@
 #include "Component/StateAbility/StateAbilityAction.h"
 #include "Component/StateAbility/StateAbilityBranch.h"
 #include "Component/StateAbility/Script/StateAbilityScript.h"
+#include "StateAbilityScriptEditorData.h"
 #include "SchemaAction/SGraphEdAbilitySchemaActions.h"
 
 #include "SGraphNode.h"
@@ -111,6 +112,23 @@ void UStateAbilityScriptGraph::NotifyGraphChanged(const FEdGraphEditAction& Acti
 	}
 
 	Super::NotifyGraphChanged(Action);
+}
+
+void UStateAbilityScriptGraph::UpdateAsset(EUpdateFlags UpdateFlags)
+{
+	Super::UpdateAsset(UpdateFlags);
+
+	UStateAbilityScriptArchetype* ScriptArchetype = CastChecked<UStateAbilityScriptArchetype>(GetOuter());
+	UStateAbilityScriptEditorData* EditorData = Cast<UStateAbilityScriptEditorData>(ScriptArchetype->EditorData);
+	check(EditorData);
+
+	// we can't look at pins until pin references have been fixed up post undo:
+	UEdGraphPin::ResolveAllPinReferences();
+
+	if (UpdateFlags == EUpdateFlags::RebuildGraph)
+	{
+		EditorData->TryRemoveOrphanedObjects();
+	}
 }
 
 void UStateAbilityScriptGraph::Release()

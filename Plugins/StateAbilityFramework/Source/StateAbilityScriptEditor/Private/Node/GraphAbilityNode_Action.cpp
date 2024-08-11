@@ -1,5 +1,6 @@
 #include "Node/GraphAbilityNode_Action.h"
 
+#include "StateAbilityScriptEditorData.h"
 #include "Node/StateAbilityEditorTypes.h"
 #include "Component/StateAbility/StateAbilityAction.h"
 #include "Component/StateAbility/Script/StateAbilityScript.h"
@@ -14,7 +15,7 @@
 
 void UGraphAbilityNode_Action::AllocateDefaultPins()
 {
-	CreatePin(EGPD_Input, UStateAbilityEditorTypes::PinCategory_Action, TEXT("In"));
+	CreatePin(EGPD_Input, UStateAbilityEditorTypes::PinCategory_Exec, TEXT("In"));
 
 	UStateAbilityAction* ActionNode = Cast<UStateAbilityAction>(NodeInstance);
 	if (!ActionNode)
@@ -22,17 +23,22 @@ void UGraphAbilityNode_Action::AllocateDefaultPins()
 		return;
 	}
 
+	UStateAbilityScriptArchetype* ScriptArchetype = GetGraph()->GetTypedOuter<UStateAbilityScriptArchetype>();
+	TSharedPtr<FAbilityScriptViewModel> ScriptViewModel = Cast<UStateAbilityScriptEditorData>(ScriptArchetype->EditorData)->GetScriptViewModel();
+
 	TMap<FName, FConfigVars_EventSlot> EventSlots = ActionNode->GetEventSlots();
 	for (auto& EventPair : EventSlots)
 	{
-		CreatePin(EGPD_Output, UStateAbilityEditorTypes::PinCategory_Action, EventPair.Key);
+		UEdGraphPin* NewPin = CreatePin(EGPD_Output, UStateAbilityEditorTypes::PinCategory_Exec, EventPair.Key);
+
+		ScriptViewModel->RecordEventSlotWithPin(NewPin, EventPair.Value);
 	}
 }
 
 FText UGraphAbilityNode_Action::GetNodeTitle(ENodeTitleType::Type TitleType) const
 {
 	UStateAbilityAction* MyNode = Cast<UStateAbilityAction>(NodeInstance);
-	if (MyNode->DisplayName.ToString().Len() > 0)
+	if (IsValid(MyNode) && MyNode->DisplayName.ToString().Len() > 0)
 	{
 		return FText::FromName(MyNode->DisplayName);
 	}
@@ -70,7 +76,7 @@ void UGraphAbilityNode_Action::InitializeNode(UEdGraph* InGraph)
 {
 	// 加入ScriptArchetype，方便后续清扫，不用担心序列化问题，因为没有RF_Standalone标记，所以这里是根据引用序列化的。
 	UStateAbilityScriptArchetype* ScriptArchetype = InGraph->GetTypedOuter<UStateAbilityScriptArchetype>();
-	UStateAbilityNodeBase* BaseNode = UStateAbilityNodeBase::CreateInstance<UStateAbilityNodeBase>(Cast<UStateAbilityScript>(ScriptArchetype->GeneratedScriptClass->GetDefaultObject(false)), NodeClass);
+	UStateAbilityNodeBase* BaseNode = UStateAbilityNodeBase::CreateInstance<UStateAbilityNodeBase>(ScriptArchetype, NodeClass);
 	NodeInstance = BaseNode;
 
 	static const FName NAME_DisplayName = "DisplayName";

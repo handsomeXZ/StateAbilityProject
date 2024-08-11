@@ -23,7 +23,7 @@ FStateAbilityEditorStyle::FStateAbilityEditorStyle()
 
 
 	const FString EngineSlateContentDir = FPaths::EngineContentDir() / TEXT("Slate");
-	const FString StateTreePluginContentDir = FPaths::ProjectPluginsDir() / TEXT("StateAbilitySystem/Resources");
+	const FString StateTreePluginContentDir = FPaths::ProjectPluginsDir() / TEXT("StateAbilityFramework/Resources");
 
 	// These are the Slate colors which reference the dynamic colors in FSlateCoreStyle; these are the colors to put into the style
 	static const FSlateColor Black = FLinearColor(0.000000, 0.000000, 0.000000);
@@ -106,6 +106,8 @@ FStateAbilityEditorStyle::FStateAbilityEditorStyle()
 	Set("StateAbilityEditor.SlotLinked", new IMAGE_BRUSH_SVG("Slate/Slot_Linked", Icon16x16));
 	Set("StateAbilityEditor.SlotRoot", new IMAGE_BRUSH_SVG("Slate/Slot_Root", Icon16x16));
 	Set("StateAbilityEditor.SlotNormal", new IMAGE_BRUSH_SVG("Slate/Slot_Normal", Icon16x16));
+
+	Set("Pin.Point", new IMAGE_BRUSH_SVG("Slate/Pin_Point", Icon16x16));
 
 	// Node
 	Set("StateAbilityEditor.SharedNode", new IMAGE_BRUSH_SVG("Slate/Node_Shared", Icon16x16));

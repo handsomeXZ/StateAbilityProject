@@ -97,7 +97,7 @@ void SGraphAbilityNode_Entry::CreatePinWidgets()
 	UEdGraphPin* CurPin = SAGraphNode->GetOutputPin();
 	if (!CurPin->bHidden)
 	{
-		TSharedPtr<SGraphPin> NewPin = SNew(SGraphSASPinEntry, CurPin);
+		TSharedPtr<SGraphPin> NewPin = SNew(SGraphAbilityPinEntry, CurPin);
 
 		this->AddPin(NewPin.ToSharedRef());
 	}

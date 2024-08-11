@@ -1,6 +1,9 @@
 #pragma once
 
 #include "CoreMinimal.h"
+
+#include "Component/StateAbility/StateAbilityConfigVars/StateAbilityConfigVarsTypes.h"
+
 #include "StateAbilityScriptEditorData.generated.h"
 
 class UGraphAbilityNode;
@@ -8,6 +11,23 @@ class UStateTreeBaseNode;
 class UStateAbilityNodeBase;
 enum class EScriptStateTreeNodeType : uint8;
 enum class EStateEventSlotType : uint8;
+
+class FAbilityScriptViewModel : public TSharedFromThis<FAbilityScriptViewModel>
+{
+public:
+	FAbilityScriptViewModel() {}
+	FAbilityScriptViewModel(TSharedRef<FUICommandList> InToolkitCommands);
+
+	TSharedPtr<FUICommandList> ToolkitCommands;
+	DECLARE_MULTICAST_DELEGATE_OneParam(FOnStateTreeNodeSelected, const TSet<UObject*>& /*SelectedNodes*/);
+	FOnStateTreeNodeSelected OnStateTreeNodeSelected;
+
+	void RecordEventSlotWithPin(UEdGraphPin* Pin, const FConfigVars_EventSlot& EventSlot);
+	void ClearRecordedEventslot(UEdGraphPin* Pin);
+	FConfigVars_EventSlot* FindEventSlotByPin(UEdGraphPin* Pin);
+private:
+	TMap<UEdGraphPin*, FConfigVars_EventSlot> PinToEventSlot;
+};
 
 UCLASS()
 class UStateAbilityScriptEditorData : public UObject
@@ -18,7 +38,13 @@ public:
 	UStateAbilityScriptEditorData();
 
 	virtual void Init();
+	virtual void OpenEdit(TSharedRef<FUICommandList> InToolkitCommands);
 	virtual void Save();
+
+	void TryRemoveOrphanedObjects();
+
+	TSharedPtr<FAbilityScriptViewModel> GetScriptViewModel(){ return ScriptViewModel; }
+	UEdGraph* GetStateTreeGraph() { return StateTreeGraph; }
 private:
 	void SaveScriptStateTree();
 
@@ -27,17 +53,15 @@ private:
 	void CollectAllNodeInstancesAndPersistObjects(TSet<UObject*>& NodeInstances);
 	bool CanRemoveNestedObject(UObject* TestObject);
 
-	void TraverseAllGraph(TFunction<void(UEdGraph*)> InProcessor);
-	void TraverseAllNodeInstance(TFunction<void(UStateAbilityNodeBase*)> InProcessor);
-	void TraverseStateTreeNodeRecursive(UStateTreeBaseNode* CurrentNode, TFunction<void(UStateTreeBaseNode*)> InProcessor);
-	void TraverseGraphNodeRecursive(UGraphAbilityNode* PrevNode, UGraphAbilityNode* CurrentNode, TFunction<void(UGraphAbilityNode* PrevNode, UGraphAbilityNode* CurrentNode)> InProcessor);
-	void TraverseGraphRecursive(UStateTreeBaseNode* CurrentNode, TFunction<void(UEdGraph*)> InProcessor);
+	void TraverseStateTreeNodeRecursive(UStateTreeBaseNode* PrevNode, UStateTreeBaseNode* CurrentNode, TFunction<void(UStateTreeBaseNode* PrevNode, UStateTreeBaseNode* CurrentNode)> InProcessor);
+	void TraverseGraphNodeRecursive(UGraphAbilityNode* PrevGraphNode, UGraphAbilityNode* CurrentGraphNode, TFunction<void(UGraphAbilityNode* PrevGraphNode, UGraphAbilityNode* CurrentGraphNode)> InProcessor);
 
-	void ResetObjectOwner(UObject* NewOwner, UObject* Object, ERenameFlags AdditionalFlags = RF_NoFlags);
-
-	UStateTreeBaseNode& AddRootState();
+	// EventSlot
+	void SaveEventSlotToNode(UObject* Node);
 
 private:
 	UPROPERTY()
-	TArray<TObjectPtr<UStateTreeBaseNode>> TreeRoots;	// 默认现在只有一个Root
+	TObjectPtr<UEdGraph> StateTreeGraph;
+
+	TSharedPtr<FAbilityScriptViewModel> ScriptViewModel;
 };

@@ -9,7 +9,7 @@
 
 
 USTRUCT()
-struct FConfigVars_EventSlot
+struct STATEABILITYSCRIPTRUNTIME_API FConfigVars_EventSlot
 {
 	GENERATED_BODY()
 public:
@@ -22,7 +22,7 @@ public:
 };
 
 USTRUCT(BlueprintType)
-struct FConfigVars_EventSlotBag
+struct STATEABILITYSCRIPTRUNTIME_API FConfigVars_EventSlotBag
 {
 	GENERATED_BODY()
 public:

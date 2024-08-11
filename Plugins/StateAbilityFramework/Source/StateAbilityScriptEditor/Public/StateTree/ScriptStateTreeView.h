@@ -42,10 +42,10 @@ enum class EScriptStateTreeViewModelInsert : uint8
 class FScriptStateTreeViewModel : public FEditorUndoClient, public TSharedFromThis<FScriptStateTreeViewModel>
 {
 public:
-	FScriptStateTreeViewModel();
+	FScriptStateTreeViewModel(UStateAbilityScriptEditorData* InEditorData);
 	virtual ~FScriptStateTreeViewModel() override;
 
-	void Init(UStateAbilityScriptEditorData* InEditorData);
+	void Init(UStateTreeStateNode* InRootStateNode);
 
 	//~ FEditorUndoClient
 	virtual void PostUndo(bool bSuccess) override;
@@ -53,6 +53,7 @@ public:
 
 	// Selection handling.
 	void ClearSelection();
+	void ClearSelection(UObject* ClearSelected);
 	void SetSelection(UStateTreeBaseNode* Selected);
 	void SetSelection(const TArray<TWeakObjectPtr<UStateTreeBaseNode>>& InSelectedNodes);
 	bool IsSelected(const UStateTreeBaseNode* Node) const;
@@ -75,37 +76,51 @@ public:
 	void MoveSelectedNodesInto(UStateTreeBaseNode* TargetNode);
 
 
-
+	TArray<TObjectPtr<UStateTreeBaseNode>>& GetTreeRoots();
 	UStateAbilityScriptArchetype* GetScriptArchetype();
+	UStateAbilityScriptEditorData* GetScriptEditorData();
 
-	// Returns TreeRoot to edit.
-	TObjectPtr<UStateTreeBaseNode> GetTreeRoot() const;
 
+	void OnNodeAdded(UStateTreeBaseNode* ParentNode, UStateTreeBaseNode* NewNode);
+	void OnNodesMoved(const TSet<UStateTreeBaseNode*>& AffectedParents, const TSet<UStateTreeBaseNode*>& MovedNodes);
+	void OnNodeRelease(UStateTreeBaseNode* OldNode);
+
+	void OnSpawnNodeGraph(UEdGraph* NewGraph);
+	void OnDetailsViewChangingProperties(UObject* SelectedObject);
+
+	void UpdateStateTree();
+	void UpdateStateNode();
+	void UpdateStateNodePin();
 
 	DECLARE_MULTICAST_DELEGATE_TwoParams(FOnNodeAdded, UStateTreeBaseNode* /*ParentNode*/, UStateTreeBaseNode* /*NewNode*/);
-	FOnNodeAdded OnNodeAdded;
+	FOnNodeAdded OnNodeAdded_Delegate;
 	DECLARE_MULTICAST_DELEGATE_TwoParams(FOnNodesMoved, const TSet<UStateTreeBaseNode*>& /*AffectedParents*/, const TSet<UStateTreeBaseNode*>& /*MovedNodes*/);
-	FOnNodesMoved OnNodesMoved;
+	FOnNodesMoved OnNodesMoved_Delegate;
 	DECLARE_MULTICAST_DELEGATE_OneParam(FOnNodeRelease, UStateTreeBaseNode*);
-	FOnNodeRelease OnNodeRelease;
-	DECLARE_MULTICAST_DELEGATE_OneParam(FOnSelectionChanged, const TSet<UObject*>& /*SelectedNodes*/);
-	FOnSelectionChanged OnSelectionChanged;
+	FOnNodeRelease OnNodeRelease_Delegate;
+
 	DECLARE_MULTICAST_DELEGATE_OneParam(FOnSpawnNodeGraph, UEdGraph*);
-	FOnSpawnNodeGraph OnSpawnNodeGraph;
+	FOnSpawnNodeGraph OnSpawnNodeGraph_Delegate;
 	DECLARE_MULTICAST_DELEGATE_OneParam(FOnDetailsViewChangingProperties, UObject* /*SelectedObject*/);
-	FOnDetailsViewChangingProperties OnDetailsViewChangingProperties;
+	FOnDetailsViewChangingProperties OnDetailsViewChangingProperties_Delegate;
 	DECLARE_MULTICAST_DELEGATE(FOnUpdateStateTree);
-	FOnUpdateStateTree OnUpdateStateTree;
+	FOnUpdateStateTree OnUpdateStateTree_Delegate;
+	DECLARE_MULTICAST_DELEGATE(FOnUpdateStateTree);
+	FOnUpdateStateTree OnUpdateStateNode_Delegate;
+	DECLARE_MULTICAST_DELEGATE(FOnUpdateStateTree);
+	FOnUpdateStateTree OnUpdateStateNodePin_Delegate;
 
 	DECLARE_MULTICAST_DELEGATE(FOnEditorClose);
-	FOnEditorClose OnEditorClose;
-
+	FOnEditorClose OnEditorClose_Delegate;
 private:
 	void MoveSelectedNodes_Internal(UStateTreeBaseNode* TargetNode, const EScriptStateTreeViewModelInsert RelativeLocation);
 
 private:
 	TWeakObjectPtr<UStateAbilityScriptEditorData> EditorDataWeak;
 	TSet<TWeakObjectPtr<UStateTreeBaseNode>> SelectedNodes;
+
+	// 目前仅StateNode可以作为RootNode
+	UStateTreeStateNode* RootStateNode = nullptr;
 };
 
 class SScriptStateTreeView : public SCompoundWidget
@@ -118,7 +133,7 @@ public:
 	virtual ~SScriptStateTreeView() override;
 	virtual FReply OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
 
-	void Construct(const FArguments& InArgs, TSharedPtr<FScriptStateTreeViewModel> InScriptStateTreeViewModel, const TSharedRef<FUICommandList>& InCommandList);
+	void Construct(const FArguments& InArgs, TSharedPtr<FScriptStateTreeViewModel> InScriptStateTreeViewModel);
 
 private:
 	virtual FReply OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent) override;
@@ -237,11 +252,11 @@ struct FStateEventSlotInfo
 	GENERATED_BODY()
 public:
 	UPROPERTY(EditAnywhere)
-	FName EventName;
+	FName EventName = NAME_None;
 	UPROPERTY()
-	FGuid UID;
+	FGuid UID = FGuid::NewGuid();
 	UPROPERTY()
-	EStateEventSlotType SlotType;
+	EStateEventSlotType SlotType = EStateEventSlotType::ActionEvent;
 };
 
 // Base
@@ -251,20 +266,23 @@ class UStateTreeBaseNode : public UObject
 	GENERATED_BODY()
 public:
 	UPROPERTY(EditAnywhere, Category="一般")
-	FName Name;
+	FName Name = NAME_None;
 	UPROPERTY(VisibleAnywhere, Category = "一般")
-	EScriptStateTreeNodeType NodeType;
+	EScriptStateTreeNodeType NodeType = EScriptStateTreeNodeType::None;
 
 	UPROPERTY();
-	UStateTreeBaseNode* Parent;
+	UStateTreeBaseNode* Parent = nullptr;
 	UPROPERTY()
 	TArray<TObjectPtr<UStateTreeBaseNode>> Children;
 	UPROPERTY()
-	bool bIsExpanded;
+	bool bIsExpanded = false;
 	UPROPERTY()
 	FStateEventSlotInfo EventSlotInfo;
 
 public:
+	virtual bool CanReleaseNode() {
+		return true;
+	}
 	virtual void GenerateSlotNodes() {
 		RemoveChildren();
 	}
@@ -276,8 +294,9 @@ public:
 	virtual void Release() {
 		if (ScriptStateTreeViewModel.IsValid())
 		{
-			ScriptStateTreeViewModel->OnNodeRelease.Broadcast(this);
+			ScriptStateTreeViewModel->OnNodeRelease(this);
 		}
+		ScriptStateTreeViewModel.Reset();
 		
 		Parent = nullptr;
 		SetFlags(RF_Transient);
@@ -302,6 +321,10 @@ public:
 		Children = FromNode->Children;
 		EventSlotInfo = FromNode->EventSlotInfo;
 		bIsExpanded = FromNode->bIsExpanded;
+	}
+
+	TSharedPtr<FScriptStateTreeViewModel> GetStateTreeViewModel() {
+		return ScriptStateTreeViewModel;
 	}
 private:
 	void RemoveChildren()

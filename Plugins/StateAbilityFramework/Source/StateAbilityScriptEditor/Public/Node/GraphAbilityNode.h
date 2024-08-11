@@ -34,6 +34,7 @@ public:
 	virtual bool CanDuplicateNode() const override;
 	virtual bool CanUserDeleteNode() const override;
 	virtual void DestroyNode() override;
+	virtual void PostEditUndo() override;
 	//~ End UEdGraphNode Interface
 
 	// @return the input pin for this Node
@@ -50,7 +51,6 @@ public:
 	/** initialize instance object  */
 	virtual void InitializeNode(UEdGraph* InGraph);
 
-protected:
 	virtual void ResetNodeOwner();
 
 };

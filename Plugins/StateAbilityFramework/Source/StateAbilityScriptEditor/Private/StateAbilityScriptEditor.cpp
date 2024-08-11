@@ -24,8 +24,10 @@ void FStateAbilityScriptEditorModule::StartupModule()
 	FStateAbilityEditorStyle::Register();
 
 
-	SAGraphNodeFactory = MakeShareable(new FSAGraphNodeFactory());
+	SAGraphNodeFactory = MakeShared<FSAGraphNodeFactory>();
+	SAPinConnectionFactory = MakeShared<FSAPinConnectionFactory>();
 	FEdGraphUtilities::RegisterVisualNodeFactory(SAGraphNodeFactory);
+	FEdGraphUtilities::RegisterVisualPinConnectionFactory(SAPinConnectionFactory);
 
 	//StoryPinConnectionFactory = MakeShareable(new FStoryPinConnectionFactory());
 	//FEdGraphUtilities::RegisterVisualPinConnectionFactory(StoryPinConnectionFactory);
@@ -60,7 +62,9 @@ void FStateAbilityScriptEditorModule::ShutdownModule()
 	if (SAGraphNodeFactory.IsValid())
 	{
 		FEdGraphUtilities::UnregisterVisualNodeFactory(SAGraphNodeFactory);
+		FEdGraphUtilities::UnregisterVisualPinConnectionFactory(SAPinConnectionFactory);
 		SAGraphNodeFactory.Reset();
+		SAPinConnectionFactory.Reset();
 	}
 
 	//if (StoryPinConnectionFactory.IsValid())

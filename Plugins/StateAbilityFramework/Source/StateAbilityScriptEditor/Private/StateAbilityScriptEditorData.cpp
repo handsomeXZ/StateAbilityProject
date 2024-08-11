@@ -2,11 +2,39 @@
 
 #include "Component/StateAbility/Script/StateAbilityScript.h"
 #include "StateTree/ScriptStateTreeView.h"
+#include "Graph/StateAbilityScriptGraph.h"
+#include "StateAbilityScriptEdGraphSchema.h"
 #include "Node/GraphAbilityNode.h"
+#include "Node/GraphAbilityNode_Entry.h"
+#include "Node/GraphAbilityNode_State.h"
+#include "Node/GraphAbilityNode_Action.h"
 #include "Component/StateAbility/StateAbilityNodeBase.h"
 #include "Component/StateAbility/StateAbilityAction.h"
 #include "Component/StateAbility/StateAbilityState.h"
 #include "ConfigVarsLinker.h"
+
+//////////////////////////////////////////////////////////////////////////
+// FAbilityScriptViewModel
+FAbilityScriptViewModel::FAbilityScriptViewModel(TSharedRef<FUICommandList> InToolkitCommands)
+	: ToolkitCommands(InToolkitCommands)
+{
+	
+}
+
+void FAbilityScriptViewModel::RecordEventSlotWithPin(UEdGraphPin* Pin, const FConfigVars_EventSlot& EventSlot)
+{
+	PinToEventSlot.Add(Pin, EventSlot);
+}
+
+void FAbilityScriptViewModel::ClearRecordedEventslot(UEdGraphPin* Pin)
+{
+	PinToEventSlot.Remove(Pin);
+}
+
+FConfigVars_EventSlot* FAbilityScriptViewModel::FindEventSlotByPin(UEdGraphPin* Pin)
+{
+	return PinToEventSlot.Find(Pin);
+}
 
 //////////////////////////////////////////////////////////////////////////
 // UStateAbilityScriptEditorData
@@ -17,8 +45,13 @@ UStateAbilityScriptEditorData::UStateAbilityScriptEditorData()
 
 void UStateAbilityScriptEditorData::Init()
 {
-	// 默认都提供一个Root节点
-	AddRootState();
+	UStateAbilityScriptArchetype* ScriptArchetype = this->GetTypedOuter<UStateAbilityScriptArchetype>();
+	StateTreeGraph = UStateAbilityScriptGraph::CreateNewGraph(ScriptArchetype, NAME_None, UStateAbilityScriptGraph::StaticClass(), UStateAbilityScriptEdGraphSchema::StaticClass());
+}
+
+void UStateAbilityScriptEditorData::OpenEdit(TSharedRef<FUICommandList> InToolkitCommands)
+{
+	ScriptViewModel = MakeShared<FAbilityScriptViewModel>(InToolkitCommands);
 }
 
 void UStateAbilityScriptEditorData::Save()
@@ -28,6 +61,11 @@ void UStateAbilityScriptEditorData::Save()
 
 	SaveScriptStateTree();
 
+	RemoveOrphanedObjects();
+}
+
+void UStateAbilityScriptEditorData::TryRemoveOrphanedObjects()
+{
 	RemoveOrphanedObjects();
 }
 
@@ -61,230 +99,108 @@ void UStateAbilityScriptEditorData::SaveScriptStateTree()
 	// 重置NetDeltas优化协议
 	//ScriptArchetype->NetDeltasProtocal.Reset();
 
-	// 记录State，ActionGraph, RootUniqueID，并搜集所有 EventSlot
-	bool bIsFirstNode = true;
-	TraverseStateTreeNodeRecursive(TreeRoots[0], [ScriptArchetype, &bIsFirstNode](UStateTreeBaseNode* CurrentNode) {
-		uint32 CurrentUniqueID = -1;
 
-		if (CurrentNode->NodeType == EScriptStateTreeNodeType::State)
+	// 外层循环遍历StateTreeGraph。Graph的第一个Node是EntryNode，不用记录。
+	TraverseGraphNodeRecursive(nullptr, Cast<UGraphAbilityNode>(StateTreeGraph->Nodes[0]), [this, ScriptArchetype, ScriptViewModel = ScriptViewModel](UGraphAbilityNode* PrevGraphNode, UGraphAbilityNode* CurrentGraphNode) {
+		
+		SaveEventSlotToNode(CurrentGraphNode);
+
+		// 重置NodeInstance所有权
+		CurrentGraphNode->ResetNodeOwner();
+
+		if (UGraphAbilityNode_State* GraphNode_State = Cast<UGraphAbilityNode_State>(CurrentGraphNode))
 		{
-			UStateTreeStateNode* StateNode = CastChecked<UStateTreeStateNode>(CurrentNode);
-			UStateAbilityState* StateInstance = StateNode->StateInstance;
-			CurrentUniqueID = StateInstance->UniqueID;
-			ScriptArchetype->StateTemplates.Add(StateInstance);
-			
 			// 处理NetDeltas优化协议
 			// @TODO: 暂时没有处理好Attribute属性依赖关系图，所以暂时不优化State。
-			
 
-			// 处理 Related SubState
-			StateInstance->RelatedSubState.Empty();
-			if (!StateInstance->bIsPersistent)
-			{
-				if (UStateTreeBaseNode* ParentState = FindParentState(CurrentNode))
+			UStateTreeStateNode* RootStateNode = GraphNode_State->GetRootStateNode();
+
+			TraverseStateTreeNodeRecursive(nullptr, RootStateNode, [this, ScriptArchetype, ScriptViewModel = ScriptViewModel](UStateTreeBaseNode* PrevNode, UStateTreeBaseNode* CurrentNode) {
+				if (PrevNode == nullptr && CurrentNode->NodeType == EScriptStateTreeNodeType::State)
 				{
-					UStateTreeStateNode* ParentStateNode = CastChecked<UStateTreeStateNode>(ParentState);
+					// 处理StateTree根节点
+					UStateTreeStateNode* RootStateNode = CastChecked<UStateTreeStateNode>(CurrentNode);
+					UStateAbilityState* StateInstance = RootStateNode->StateInstance;
+					uint32 CurrentUniqueID = StateInstance->UniqueID;
+					ScriptArchetype->StateTemplates.Add(StateInstance);
+
+				}
+				else if (CurrentNode->NodeType == EScriptStateTreeNodeType::State)
+				{
+					UStateTreeStateNode* ParentStateNode = CastChecked<UStateTreeStateNode>(PrevNode);
+					UStateTreeStateNode* CurStateNode = CastChecked<UStateTreeStateNode>(CurrentNode);
 					UStateAbilityState* ParentStateInstance = ParentStateNode->StateInstance;
-					ParentStateInstance->RelatedSubState.Add(CurrentUniqueID);
-				}
-			}
+					UStateAbilityState* StateInstance = CurStateNode->StateInstance;
+					uint32 CurrentUniqueID = StateInstance->UniqueID;
+					ScriptArchetype->StateTemplates.Add(StateInstance);
 
-		}
-		else if (CurrentNode->NodeType == EScriptStateTreeNodeType::Action)
-		{
-			UStateTreeActionNode* ActionNode = CastChecked<UStateTreeActionNode>(CurrentNode);
+					SaveEventSlotToNode(CurrentNode);
 
-			// 因为Graph的第一个Node是EntryNode，不需要存储。
-			if (ActionNode->EdGraph && ActionNode->EdGraph->Nodes.Num() > 0 && ActionNode->EdGraph->Nodes[0] && ActionNode->EdGraph->Nodes[0]->Pins.Num() > 0 && ActionNode->EdGraph->Nodes[0]->Pins[0]->LinkedTo.Num() > 0)
-			{
-				UGraphAbilityNode* GraphNode = Cast<UGraphAbilityNode>(ActionNode->EdGraph->Nodes[0]->Pins[0]->LinkedTo[0]->GetOwningNode());
-				UStateAbilityNodeBase* AbilityNode = Cast<UStateAbilityNodeBase>(GraphNode->NodeInstance);
-				CurrentUniqueID = AbilityNode->UniqueID;
-				ScriptArchetype->ActionSequenceMap.Add(CurrentUniqueID, AbilityNode);
-			}
-		}
-		else if (CurrentNode->NodeType == EScriptStateTreeNodeType::Shared)
-		{
-			UStateTreeSharedNode* Shared = CastChecked<UStateTreeSharedNode>(CurrentNode);
-			UStateTreeBaseNode* SharedNode = Shared->SharedNode.Get();
-			if (SharedNode->NodeType == EScriptStateTreeNodeType::Action)
-			{
-				UStateTreeActionNode* ActionNode = CastChecked<UStateTreeActionNode>(SharedNode);
-
-				// 因为Graph的第一个Node是EntryNode，不需要存储。
-				if (ActionNode->EdGraph && ActionNode->EdGraph->Nodes.Num() > 0 && ActionNode->EdGraph->Nodes[0] && ActionNode->EdGraph->Nodes[0]->Pins.Num() > 0 && ActionNode->EdGraph->Nodes[0]->Pins[0]->LinkedTo.Num() > 0)
-				{
-					UGraphAbilityNode* GraphNode = Cast<UGraphAbilityNode>(ActionNode->EdGraph->Nodes[0]->Pins[0]->LinkedTo[0]->GetOwningNode());
-					UStateAbilityNodeBase* AbilityNode = Cast<UStateAbilityNodeBase>(GraphNode->NodeInstance);
-					CurrentUniqueID = AbilityNode->UniqueID;
-
-					// 仅需要记录UniqueID
-				}
-			}
-			else if (SharedNode->NodeType == EScriptStateTreeNodeType::State)
-			{
-				UStateTreeStateNode* StateNode = CastChecked<UStateTreeStateNode>(SharedNode);
-				CurrentUniqueID = StateNode->StateInstance->UniqueID;
-				// 仅需要记录UniqueID
-			}
-		}
-		else if (CurrentNode->NodeType == EScriptStateTreeNodeType::Slot)
-		{
-			return;
-		}
-
-
-		// 记录StateTreeView内，每个节点所属的EventSlot
-		const FStateEventSlotInfo& EventSlotInfo = CurrentNode->EventSlotInfo;
-		ScriptArchetype->EventSlotMap.Add(EventSlotInfo.UID, CurrentUniqueID);
-
-		if (bIsFirstNode)
-		{
-			ScriptArchetype->RootNodeID = CurrentUniqueID;
-			bIsFirstNode = false;
-		}
-	});
-
-	TraverseAllGraph([ScriptArchetype, this](UEdGraph* CurrentEdGraph) {
-		if (CurrentEdGraph && CurrentEdGraph->Nodes.Num() > 0 && CurrentEdGraph->Nodes[0])
-		{
-			// 因为Graph的第一个Node是EntryNode，不需要存储。
-			UGraphAbilityNode* EntryNode = Cast<UGraphAbilityNode>(CurrentEdGraph->Nodes[0]);
-			
-			TraverseGraphNodeRecursive(nullptr, EntryNode, [ScriptArchetype](UGraphAbilityNode* PrevNode, UGraphAbilityNode* CurrentNode) {
-				UStateAbilityNodeBase* CurAbilityNode = Cast<UStateAbilityNodeBase>(CurrentNode->NodeInstance);
-				ScriptArchetype->ActionMap.Add(CurAbilityNode->UniqueID, CurAbilityNode);
-
-				if (IsValid(PrevNode))
-				{
-					// 记录查找前一个节点的所有EventSlot，并根据Pin的名称查找CurNode所属的EventSlot
-
-					UStateAbilityNodeBase* PrevAbilityNode = Cast<UStateAbilityNodeBase>(PrevNode->NodeInstance);
-
-					// @TODO：存在浪费
-					TMap<FName, FConfigVars_EventSlot> EventSlots = PrevAbilityNode->GetEventSlots();
-
-					if (FConfigVars_EventSlot* EventSlotPtr = EventSlots.Find(CurrentNode->Pins[0]->GetFName()))
+					// 处理 Related SubState
+					ParentStateInstance->RelatedSubState.Empty();
+					if (!StateInstance->bIsPersistent)
 					{
-						ScriptArchetype->EventSlotMap.Add(EventSlotPtr->UID, CurAbilityNode->UniqueID);
+						ParentStateInstance->RelatedSubState.Add(CurrentUniqueID);
 					}
 				}
-
-				// 处理NetDeltas优化协议
-				switch (CurAbilityNode->NodeRepMode)
-				{
-				case ENodeRepMode::Local: {
-					//ScriptArchetype->NetDeltasProtocal.AutonomousProxy_ActionSet.Add(CurAbilityNode->UniqueID);
-					break;
-				}
-				case ENodeRepMode::All: {
-					//ScriptArchetype->NetDeltasProtocal.AutonomousProxy_ActionSet.Add(CurAbilityNode->UniqueID);
-					//ScriptArchetype->NetDeltasProtocal.SimulatedProxy_ActionSet.Add(CurAbilityNode->UniqueID);
-					break;
-				}
-				}
-
 			});
+
 		}
-		});
-}
-
-void UStateAbilityScriptEditorData::TraverseAllGraph(TFunction<void(UEdGraph*)> InProcessor)
-{
-	if (TreeRoots.Num() == 0)
-	{
-		return;
-	}
-
-	TraverseGraphRecursive(TreeRoots[0], InProcessor);
-}
-
-void UStateAbilityScriptEditorData::TraverseAllNodeInstance(TFunction<void(UStateAbilityNodeBase*)> InProcessor)
-{
-	if (TreeRoots.Num() == 0)
-	{
-		return;
-	}
-
-	TraverseStateTreeNodeRecursive(TreeRoots[0], [Processor = InProcessor](UStateTreeBaseNode* CurrentNode) {
-		if (CurrentNode->NodeType == EScriptStateTreeNodeType::State)
+		else if (UGraphAbilityNode_Action* GraphNode_Action = Cast<UGraphAbilityNode_Action>(CurrentGraphNode))
 		{
-			Processor(CastChecked<UStateTreeStateNode>(CurrentNode)->StateInstance);
+			UStateAbilityNodeBase* ActionInstance = Cast<UStateAbilityNodeBase>(GraphNode_Action->NodeInstance);
+			ScriptArchetype->ActionMap.Add(ActionInstance->UniqueID, ActionInstance);
+		}
+		
+		if (UGraphAbilityNode_Entry* GraphNode_Entry = Cast<UGraphAbilityNode_Entry>(PrevGraphNode))
+		{
+			UStateAbilityNodeBase* NodeInstance = Cast<UStateAbilityNodeBase>(CurrentGraphNode->NodeInstance);
+			ScriptArchetype->RootNodeID = NodeInstance->UniqueID;
 		}
 	});
 
-	TraverseAllGraph([this, Processor = InProcessor](UEdGraph* CurrentEdGraph){
-		if (CurrentEdGraph && CurrentEdGraph->Nodes.Num() > 0 && CurrentEdGraph->Nodes[0] && CurrentEdGraph->Nodes[0]->Pins.Num() > 0 && CurrentEdGraph->Nodes[0]->Pins[0]->LinkedTo.Num() > 0)
-		{
-			UGraphAbilityNode* GraphNode = Cast<UGraphAbilityNode>(CurrentEdGraph->Nodes[0]->Pins[0]->LinkedTo[0]->GetOwningNode());	// 因为Graph的第一个Node是EntryNode，不需要存储。
-			TraverseGraphNodeRecursive(nullptr, GraphNode, [Processor = Processor](UGraphAbilityNode* PrevNode, UGraphAbilityNode* CurrentNode){
-				UStateAbilityNodeBase* AbilityNode = Cast<UStateAbilityNodeBase>(CurrentNode->NodeInstance);
-				Processor(AbilityNode);
-			});
-		}
-	});
 
 }
 
-void UStateAbilityScriptEditorData::TraverseStateTreeNodeRecursive(UStateTreeBaseNode* CurrentNode, TFunction<void(UStateTreeBaseNode* CurrentNode)> InProcessor)
+void UStateAbilityScriptEditorData::TraverseStateTreeNodeRecursive(UStateTreeBaseNode* PrevNode, UStateTreeBaseNode* CurrentNode, TFunction<void(UStateTreeBaseNode* PrevNode, UStateTreeBaseNode* CurrentNode)> InProcessor)
 {
 	if (!IsValid(CurrentNode))
 	{
-		return;
-	}
-
-	InProcessor(CurrentNode);
-
-	for (UStateTreeBaseNode* Child : CurrentNode->Children)
-	{
-		TraverseStateTreeNodeRecursive(Child, InProcessor);
-	}
-}
-
-void UStateAbilityScriptEditorData::TraverseGraphNodeRecursive(UGraphAbilityNode* PrevNode, UGraphAbilityNode* CurrentNode, TFunction<void(UGraphAbilityNode* PrevNode, UGraphAbilityNode* CurrentNode)> InProcessor)
-{
-	// PrevNode 允许是空的
-
-	if (!IsValid(CurrentNode))
-	{
-		InProcessor(PrevNode, nullptr);
 		return;
 	}
 
 	InProcessor(PrevNode, CurrentNode);
 
-	for (int32 PinIdx = 0; PinIdx < CurrentNode->Pins.Num(); PinIdx++)
+	for (UStateTreeBaseNode* Child : CurrentNode->Children)
 	{
-		UEdGraphPin* Pin = CurrentNode->Pins[PinIdx];
+		TraverseStateTreeNodeRecursive(CurrentNode, Child, InProcessor);
+	}
+}
+
+void UStateAbilityScriptEditorData::TraverseGraphNodeRecursive(UGraphAbilityNode* PrevGraphNode, UGraphAbilityNode* CurrentGraphNode, TFunction<void(UGraphAbilityNode* PrevGraphNode, UGraphAbilityNode* CurrentGraphNode)> InProcessor)
+{
+	// PrevNode 允许是空的
+
+	if (!IsValid(CurrentGraphNode))
+	{
+		InProcessor(PrevGraphNode, nullptr);
+		return;
+	}
+
+	InProcessor(PrevGraphNode, CurrentGraphNode);
+
+	for (int32 PinIdx = 0; PinIdx < CurrentGraphNode->Pins.Num(); PinIdx++)
+	{
+		UEdGraphPin* Pin = CurrentGraphNode->Pins[PinIdx];
 		if (Pin->Direction != EGPD_Output)
 		{
 			continue;
 		}
 		for (int32 LinkId = 0; LinkId < Pin->LinkedTo.Num(); ++LinkId)
 		{
-			UGraphAbilityNode* NextNode = Cast<UGraphAbilityNode>(Pin->LinkedTo[LinkId]->GetOwningNode());
-			TraverseGraphNodeRecursive(CurrentNode, NextNode, InProcessor);
+			UGraphAbilityNode* NextGraphNode = Cast<UGraphAbilityNode>(Pin->LinkedTo[LinkId]->GetOwningNode());
+			TraverseGraphNodeRecursive(CurrentGraphNode, NextGraphNode, InProcessor);
 		}
-	}
-}
-
-void UStateAbilityScriptEditorData::TraverseGraphRecursive(UStateTreeBaseNode* CurrentNode, TFunction<void(UEdGraph*)> InProcessor)
-{
-	if (!IsValid(CurrentNode))
-	{
-		return;
-	}
-
-	if (CurrentNode->NodeType == EScriptStateTreeNodeType::Action)
-	{
-		UStateTreeActionNode* ActionNode = CastChecked<UStateTreeActionNode>(CurrentNode);
-
-		InProcessor(ActionNode->EdGraph);
-	}
-
-	for (UStateTreeBaseNode* Child : CurrentNode->Children)
-	{
-		TraverseGraphRecursive(Child, InProcessor);
 	}
 }
 
@@ -314,6 +230,17 @@ void UStateAbilityScriptEditorData::RemoveOrphanedObjects()
 		}
 	}
 
+	GetObjectsWithOuter(StateTreeGraph, AllInners, bIncludeNestedObjects);
+	for (auto InnerIt = AllInners.CreateConstIterator(); InnerIt; ++InnerIt)
+	{
+		UObject* TestObject = *InnerIt;
+		if (!NodeInstances.Contains(TestObject) && CanRemoveNestedObject(TestObject))
+		{
+			TestObject->SetFlags(RF_Transient);
+			TestObject->Rename(nullptr, GetTransientPackage(), REN_DontCreateRedirectors | REN_NonTransactional | REN_ForceNoResetLoaders);
+		}
+	}
+
 	//// 重新标记 ScriptArchetype 内的 ConfigVarsDataBags
 	//ScriptArchetype->ConfigVarsDataBags.Empty();
 	//for (UObject* Obj : NodeInstances)
@@ -328,22 +255,36 @@ void UStateAbilityScriptEditorData::RemoveOrphanedObjects()
 
 void UStateAbilityScriptEditorData::CollectAllNodeInstancesAndPersistObjects(TSet<UObject*>& NodeInstances)
 {
-	UStateAbilityScriptArchetype* ScriptArchetype = this->GetTypedOuter<UStateAbilityScriptArchetype>();
-	UPackage* Package = ScriptArchetype->GetPackage();
 
-	TraverseAllNodeInstance([ScriptArchetype, &NodeInstances](UStateAbilityNodeBase* StateAbilityNode) {
-		NodeInstances.Add(StateAbilityNode);
-		//if (UConfigVarsData* ConfigVarsData = FConfigVarsReader::FindOrLoadLazyData(ScriptArchetype, StateAbilityNode->GetDataClass(), StateAbilityNode->UniqueID, true))
-		//{
-		//	NodeInstances.Add(ConfigVarsData);
-		//}
+	TraverseGraphNodeRecursive(nullptr, Cast<UGraphAbilityNode>(StateTreeGraph->Nodes[0]), [this, &NodeInstances](UGraphAbilityNode* PrevGraphNode, UGraphAbilityNode* CurrentGraphNode) {
+		
+		NodeInstances.Add(CurrentGraphNode);
+		NodeInstances.Add(CurrentGraphNode->NodeInstance);
+
+		if (UGraphAbilityNode_State* GraphNode_State = Cast<UGraphAbilityNode_State>(CurrentGraphNode))
+		{
+			// 处理NetDeltas优化协议
+			// @TODO: 暂时没有处理好Attribute属性依赖关系图，所以暂时不优化State。
+
+			UStateTreeStateNode* RootStateNode = GraphNode_State->GetRootStateNode();
+			TraverseStateTreeNodeRecursive(nullptr, RootStateNode, [this, &NodeInstances](UStateTreeBaseNode* PrevNode, UStateTreeBaseNode* CurrentNode) {
+				
+				NodeInstances.Add(CurrentNode);
+				if (CurrentNode->NodeType == EScriptStateTreeNodeType::State)
+				{
+					UStateTreeStateNode* CurStateNode = CastChecked<UStateTreeStateNode>(CurrentNode);
+					NodeInstances.Add(CurStateNode->StateInstance);
+				}
+
+			});
+		}
+
 	});
 }
 
 bool UStateAbilityScriptEditorData::CanRemoveNestedObject(UObject* TestObject)
 {
-	return !TestObject->IsA(UEdGraphNode::StaticClass()) &&
-		!TestObject->IsA(UEdGraph::StaticClass()) &&
+	return !TestObject->IsA(UEdGraph::StaticClass()) &&
 		!TestObject->IsA(UEdGraphSchema::StaticClass()) &&
 		!TestObject->IsA(UConfigVarsLinker::StaticClass()) &&
 		!TestObject->IsA(UStateAbilityScriptEditorData::StaticClass()) &&
@@ -351,24 +292,32 @@ bool UStateAbilityScriptEditorData::CanRemoveNestedObject(UObject* TestObject)
 		!TestObject->IsA(UStateAbilityScript::StaticClass());
 }
 
-void UStateAbilityScriptEditorData::ResetObjectOwner(UObject* NewOwner, UObject* Object, ERenameFlags AdditionalFlags)
+void UStateAbilityScriptEditorData::SaveEventSlotToNode(UObject* Node)
 {
-	if (Object && NewOwner && Object->GetOuter()->GetClass() != NewOwner->GetClass())
+	if (!IsValid(Node))
 	{
-		// 1. 不能ResetLoader，否则Linker会被清空。
-		// 2. 不要创建重定向。
-		Object->Rename(nullptr, NewOwner, AdditionalFlags | REN_DontCreateRedirectors | REN_NonTransactional | REN_ForceNoResetLoaders);
+		return;
 	}
-}
 
-UStateTreeBaseNode& UStateAbilityScriptEditorData::AddRootState()
-{
-	UStateTreeBaseNode* RootNode = NewObject<UStateTreeBaseNode>(this, FName(), RF_Transactional);
-	check(RootNode);
-	RootNode->Name = FName(TEXT("Root"));
-	RootNode->NodeType = EScriptStateTreeNodeType::Slot;
-	RootNode->EventSlotInfo.SlotType = EStateEventSlotType::ActionEvent;
-	RootNode->EventSlotInfo.EventName = FName(TEXT("Root"));
-	TreeRoots = { RootNode };
-	return *RootNode;
+	UStateAbilityScriptArchetype* ScriptArchetype = this->GetTypedOuter<UStateAbilityScriptArchetype>();
+
+	if (UGraphAbilityNode* GraphNode = Cast<UGraphAbilityNode>(Node))
+	{
+		UStateAbilityNodeBase* NodeInstance = Cast<UStateAbilityNodeBase>(GraphNode->NodeInstance);
+
+		UEdGraphPin* InPin = GraphNode->Pins[0];
+		for (UEdGraphPin* FromPin : InPin->LinkedTo)
+		{
+			if (FConfigVars_EventSlot* EventSlot = ScriptViewModel->FindEventSlotByPin(FromPin))
+			{
+				ScriptArchetype->EventSlotMap.Add(EventSlot->UID, NodeInstance->UniqueID);
+			}
+		}
+	}
+	else if (UStateTreeStateNode* StateNode = Cast<UStateTreeStateNode>(Node))
+	{
+		// 记录StateTreeView内，每个节点所属的EventSlot
+		const FStateEventSlotInfo& EventSlotInfo = StateNode->EventSlotInfo;
+		ScriptArchetype->EventSlotMap.Add(EventSlotInfo.UID, StateNode->StateInstance->UniqueID);
+	}
 }

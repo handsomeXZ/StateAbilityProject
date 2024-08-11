@@ -31,7 +31,7 @@ private:
 	/** Asset type actions */
 	TArray<TSharedPtr<class FAssetTypeActions_Base>> ItemDataAssetTypeActions;
 	TSharedPtr<class FSAGraphNodeFactory> SAGraphNodeFactory;
-	//TSharedPtr<struct FStoryPinConnectionFactory> StoryPinConnectionFactory;
+	TSharedPtr<struct FSAPinConnectionFactory> SAPinConnectionFactory;
 
 	TSharedPtr<struct FGraphNodeClassHelper> ClassCache;
 };

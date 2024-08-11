@@ -56,3 +56,17 @@ struct FSAbilitySchemaAction_NewNode : public FEdGraphSchemaAction
 		return Cast<NodeType>(Action.PerformAction(ParentGraph, nullptr, Location, bSelectNewNode));
 	}
 };
+
+USTRUCT()
+struct FSAbilitySchemaState_NewNode : public FSAbilitySchemaAction_NewNode
+{
+	GENERATED_USTRUCT_BODY();
+
+	FSAbilitySchemaState_NewNode()
+		: FSAbilitySchemaAction_NewNode()
+	{}
+
+	FSAbilitySchemaState_NewNode(FText InNodeCategory, FText InMenuDesc, FText InToolTip, const int32 InGrouping)
+		: FSAbilitySchemaAction_NewNode(MoveTemp(InNodeCategory), MoveTemp(InMenuDesc), MoveTemp(InToolTip), InGrouping)
+	{}
+};
