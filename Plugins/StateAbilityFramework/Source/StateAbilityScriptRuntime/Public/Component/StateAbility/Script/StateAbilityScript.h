@@ -4,7 +4,7 @@
 
 #include "GameplayTagContainer.h"
 
-#include "Attribute/AttributeBag.h"
+#include "Attribute/AttributeBag/AttributeBagUtils.h"
 #include "Component/StateAbility/StateAbilityAction.h"
 #include "Component/StateAbility/StateAbilityState.h"
 #include "Component/StateAbility/Script/StateAbilityScriptArchetype.h"

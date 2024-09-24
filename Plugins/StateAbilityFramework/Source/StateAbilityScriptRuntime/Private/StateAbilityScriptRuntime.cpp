@@ -2,17 +2,27 @@
 
 #include "StateAbilityScriptRuntime.h"
 
+#include "Attribute/Reactive/AttributeRegistry.h"
+
 #define LOCTEXT_NAMESPACE "FStateAbilityScriptRuntimeModule"
 
 void FStateAbilityScriptRuntimeModule::StartupModule()
 {
-	// This code will execute after your module is loaded into memory; the exact timing is specified in the .uplugin file per-module
+	FModuleManager::Get().OnModulesChanged().AddRaw(this, &FStateAbilityScriptRuntimeModule::ProcessReactiveRegistry);
+	Attribute::Reactive::FReactiveRegistry::ProcessPendingRegistrations();
 }
 
 void FStateAbilityScriptRuntimeModule::ShutdownModule()
 {
-	// This function may be called during shutdown to clean up your module.  For modules that support dynamic reloading,
-	// we call this function before unloading the module.
+	FModuleManager::Get().OnModulesChanged().RemoveAll(this);
+}
+
+void FStateAbilityScriptRuntimeModule::ProcessReactiveRegistry(FName InModule, EModuleChangeReason InReason)
+{
+	if (InReason == EModuleChangeReason::ModuleLoaded)
+	{
+		Attribute::Reactive::FReactiveRegistry::ProcessPendingRegistrations();
+	}
 }
 
 #undef LOCTEXT_NAMESPACE

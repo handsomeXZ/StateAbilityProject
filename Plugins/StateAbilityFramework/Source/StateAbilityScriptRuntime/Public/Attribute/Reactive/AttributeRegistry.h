@@ -1,0 +1,158 @@
+#pragma once
+
+#include "AttributeTraits.h"
+#include "AttributeReactiveOps.h"
+
+namespace Attribute::Reactive
+{
+	template<typename TOwner, typename = void>
+	struct FReactiveRegistryHelper_Field
+	{
+		static uint8 RegisterFieldClass();
+		static const FReactivePropertyOperations* FindPropertyOperations(const FName& InPropertyName);
+	};
+
+	template<typename TOwner, typename TValue, typename = void>
+	struct FReactiveRegistryHelper_Property
+	{
+		static uint8 RegisterProperty(typename TReactiveProperty<TOwner, TValue>::FPropertyGetterPtr PropertyGetterPtr);
+	};
+
+	class STATEABILITYSCRIPTRUNTIME_API FReactiveRegistry
+	{
+	public:
+		template<typename TOwner, typename TValue>
+		friend struct FReactiveRegistryHelper_Field;
+		template<typename TOwner, typename TValue, typename Enable>
+		friend struct FReactiveRegistryHelper_Property;
+
+		using FFieldClassGetterPtr = UField* (*)();
+		using FAttributeReflection = FReactivePropertyReflection<FReactivePropertyOperations>;
+
+		struct FUnprocessedPropertyEntry
+		{
+			FFieldClassGetterPtr GetFieldClass;
+			FAttributeReflection Reflection;
+		};
+
+		static void ProcessPendingRegistrations();
+
+		static const FReactivePropertyOperations* FindPropertyOperations(UClass* Class, const FName& InPropertyName);
+		static const FReactivePropertyOperations* FindPropertyOperations(UScriptStruct* Struct, const FName& InPropertyName);
+
+	protected:
+		template<typename TOwner, typename TValue>
+		static uint8 RegisterProperty_Internal(typename TReactiveProperty<TOwner, TValue>::FPropertyGetterPtr PropertyGetterPtr, FUnprocessedPropertyEntry& Entry);
+
+		// Since 5.3, TokenStream has been changed to Schema
+		static void AssembleReferenceSchema(UClass* Class);
+		static void AssembleReferenceSchema(UScriptStruct* Struct);
+
+		// List of properties that were not yet added to lookup table
+		static TArray<FUnprocessedPropertyEntry>& GetUnprocessedClassProperties();
+		static TArray<FUnprocessedPropertyEntry>& GetUnprocessedStructProperties();
+		static TSet<FFieldClassGetterPtr>& GetUnprocessedClass();
+		static TSet<FFieldClassGetterPtr>& GetUnprocessedStruct();
+
+		static void RegisterClassProperties(TArray<UClass*>& LocalRegisteredClass, TSet<UClass*>& ProcessedClassSet);
+		static void RegisterStructProperties(TArray<UScriptStruct*>& LocalRegisteredStruct, TSet<UScriptStruct*>& ProcessedStructSet);
+	private:
+		// Map of <ReactiveModelFieldClass, Properties>
+		static TMap<UClass*, TArray<FAttributeReflection>> ClassProperties;
+		static TMap<UScriptStruct*, TArray<FAttributeReflection>> StructProperties;
+	};
+
+	template<typename TOwner, typename TValue>
+	uint8 FReactiveRegistry::RegisterProperty_Internal(typename TReactiveProperty<TOwner, TValue>::FPropertyGetterPtr PropertyGetterPtr, FUnprocessedPropertyEntry& Entry)
+	{
+		using TDecayedValueType = typename TDecay<TValue>::Type;
+
+		const bool IsOptional = TReactivePropertyTypeTraits<TDecayedValueType>::WithOptional;
+
+		using FBaseOps = TBaseOperation<TOwner, TValue>;
+		using FGetOps = TGetValueOperation<FBaseOps, TOwner, TValue, IsOptional>;
+		using FGetAndSetOps = TSetValueOperation<FGetOps, TOwner, TValue, IsOptional>;
+		using FCombinePropOps = TAddFieldClassPropertyOperation<FGetAndSetOps, TOwner, TValue>;
+		using FFinalReactiveOps = TReactiveModelFieldClassOperation<FCombinePropOps, TOwner, TValue>;
+
+		using FEffectiveOpsType = TReactivePropertyOperations<FFinalReactiveOps>;
+
+		static_assert(sizeof(FReactivePropertyOperations) == sizeof(FEffectiveOpsType), "Generated Operations type cannot fit into OpsBuffer");
+
+		FReactiveRegistry::FAttributeReflection& Reflection = Entry.Reflection;
+
+		const TReactiveProperty<TOwner, TValue>* Prop = PropertyGetterPtr();
+		Prop->AttributeID = FReactiveModelTypeTraitsBase<TOwner>::AttributeCount - 1;
+
+		new (Reflection.GetOperations()) FEffectiveOpsType(Prop);
+
+		Reflection.Flags.IsOptional = IsOptional;
+		Reflection.Flags.HasPublicGetter = Prop->HasPublicGetter();
+		Reflection.Flags.HasPublicSetter = Prop->HasPublicSetter();
+		return 1;
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+
+	template<typename TOwner, typename TValue>
+	struct FReactiveRegistryHelper_Property<TOwner, TValue, typename TEnableIf<TValueTypeTraits<TOwner>::IsClass>::Type>
+	{
+		static uint8 RegisterProperty(typename TReactiveProperty<TOwner, TValue>::FPropertyGetterPtr PropertyGetterPtr)
+		{
+			++FReactiveModelTypeTraitsBase<TOwner>::AttributeCount;
+
+			FReactiveRegistry::FUnprocessedPropertyEntry& Entry = FReactiveRegistry::GetUnprocessedClassProperties().AddDefaulted_GetRef();
+			Entry.GetFieldClass = (FReactiveRegistry::FFieldClassGetterPtr)&StaticClass<TOwner>;
+
+			return FReactiveRegistry::RegisterProperty_Internal<TOwner, TValue>(PropertyGetterPtr, Entry);
+		}
+	};
+
+	template<typename TOwner, typename TValue>
+	struct FReactiveRegistryHelper_Property<TOwner, TValue, typename TEnableIf<TValueTypeTraits<TOwner>::IsStruct>::Type>
+	{
+		static uint8 RegisterProperty(typename TReactiveProperty<TOwner, TValue>::FPropertyGetterPtr PropertyGetterPtr)
+		{
+			++FReactiveModelTypeTraitsBase<TOwner>::AttributeCount;
+
+			FReactiveRegistry::FUnprocessedPropertyEntry& Entry = FReactiveRegistry::GetUnprocessedStructProperties().AddDefaulted_GetRef();
+			Entry.GetFieldClass = (FReactiveRegistry::FFieldClassGetterPtr)&StaticStruct<TOwner>;
+
+			return FReactiveRegistry::RegisterProperty_Internal<TOwner, TValue>(PropertyGetterPtr, Entry);
+		}
+	};
+
+	template<typename TOwner>
+	struct FReactiveRegistryHelper_Field<TOwner, typename TEnableIf<TValueTypeTraits<TOwner>::IsClass>::Type>
+	{
+		static uint8 RegisterFieldClass()
+		{
+			FReactiveModelTypeTraitsBase<TOwner>::AttributeCount += FReactiveModelTypeTraitsBase<TOwner::Super>::AttributeCount;
+
+			FReactiveRegistry::GetUnprocessedClass().Add((FReactiveRegistry::FFieldClassGetterPtr)&StaticClass<TOwner>);
+
+			return 1;
+		}
+		static const FReactivePropertyOperations* FindPropertyOperations(const FName& InPropertyName)
+		{
+			return FReactiveRegistry::FindPropertyOperations(TOwner::StaticClass(), InPropertyName);
+		}
+	};
+
+	template<typename TOwner>
+	struct FReactiveRegistryHelper_Field<TOwner, typename TEnableIf<TValueTypeTraits<TOwner>::IsStruct>::Type>
+	{
+		static uint8 RegisterFieldClass()
+		{
+			FReactiveModelTypeTraitsBase<TOwner>::AttributeCount += FReactiveModelTypeTraitsBase<TOwner::Super>::AttributeCount;
+
+			FReactiveRegistry::GetUnprocessedStruct().Add((FReactiveRegistry::FFieldClassGetterPtr)&StaticStruct<TOwner>);
+
+			return 1;
+		}
+		static const FReactivePropertyOperations* FindPropertyOperations(const FName& InPropertyName)
+		{
+			return FReactiveRegistry::FindPropertyOperations(TOwner::StaticStruct(), InPropertyName);
+		}
+	};
+}

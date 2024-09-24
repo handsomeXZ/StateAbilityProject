@@ -7,7 +7,7 @@
 #include "DetailLayoutBuilder.h"
 #include "EdGraphSchema_K2.h"
 
-#include "Attribute/AttributeBag.h"
+#include "Attribute/AttributeBag/AttributeBagUtils.h"
 
 #define LOCTEXT_NAMESPACE "AttributeDetails"
 

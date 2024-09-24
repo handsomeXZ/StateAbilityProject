@@ -3,7 +3,7 @@
 
 #include "CoreMinimal.h"
 
-#include "Attribute/AttributeBag.h"
+#include "Attribute/AttributeBag/AttributeBagUtils.h"
 #include "Component/StateAbility/StateAbilityNodeBase.h"
 
 #include "StateAbilityState.generated.h"
