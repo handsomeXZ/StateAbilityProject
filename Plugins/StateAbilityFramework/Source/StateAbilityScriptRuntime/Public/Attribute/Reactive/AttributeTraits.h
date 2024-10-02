@@ -16,7 +16,7 @@ struct TReactivePropertyTypeTraitsBase
     enum
     {
         WithSetterArgumentByValue   = false,            // Forces generated setter method to accept argument By Value rather than By Reference
-        WithSetterComparison        = true,             // Defines whether we need to perform comparison between existing value and new value in property Setter
+		WithSetterIdentical = true,						// The value and the new value in the property setter can be compared.
 		WithOptional				= false,
     };
 };
@@ -58,12 +58,12 @@ namespace Attribute::Reactive
 {
 	// helper used to select by-value setter for arithmetic types
 	template <typename T>
-	using TValueOrRef = TChooseClass< TIsArithmetic<T>::Value || TIsEnum<T>::Value || TReactivePropertyTypeTraits<T>::WithSetterArgumentByValue, T, const T& >;
+	using TValueOrRef = TChooseClass< TIsArithmetic<T>::Value || TIsEnum<T>::Value || TReactivePropertyTypeTraits<T>::WithSetterArgumentByValue, T, T& >;
 
 	template <typename T>
 	struct TPropertyTypeSelector
 	{
-		using GetterType = T;
+		using GetterType = typename TValueOrRef<T>::Result;
 		using SetterType = typename TValueOrRef<T>::Result;
 		using FieldType = T;
 	};
@@ -79,7 +79,7 @@ namespace Attribute::Reactive
 	template <typename T>
 	struct TPropertyTypeSelector<T*>
 	{
-		using GetterType = T*;
+		using GetterType = T* &;
 		using SetterType = T*;
 		using FieldType = T*;
 	};

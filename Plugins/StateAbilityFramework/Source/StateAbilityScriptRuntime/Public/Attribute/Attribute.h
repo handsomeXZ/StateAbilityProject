@@ -31,6 +31,51 @@ namespace Attribute
 	};
 
 
+    template <typename T, typename = void>
+    struct TFieldTypeTraits
+    {
+        static UField* GetTypeField()
+        {
+            return nullptr;
+        }
+
+        static bool IsChildOf(UField* BaseField)
+        {
+            return false;
+        }
+    };
+
+	template <typename T>
+	struct TFieldTypeTraits<T, typename TEnableIf<TValueTypeTraits<T>::IsClass>::Type>
+	{
+        static UField* GetTypeField()
+		{
+			return T::StaticClass();
+		}
+
+		static bool IsChildOf(UField* BaseField)
+		{
+			UClass* BaseClass = (UClass*)BaseField;
+            return T::StaticClass()->IsChildOf(BaseClass);
+		}
+	};
+
+	template <typename T>
+	struct TFieldTypeTraits<T, typename TEnableIf<TValueTypeTraits<T>::IsStruct>::Type>
+	{
+        static UField* GetTypeField()
+		{
+			return T::StaticStruct();
+		}
+
+		static bool IsChildOf(UField* BaseField)
+		{
+            UScriptStruct* BaseStruct = (UScriptStruct*)BaseField;
+			return T::StaticStruct()->IsChildOf(BaseStruct);
+		}
+	};
+
+
     /**
      * This class creates FProperty objects based on requested TValue.
      * Use UECodeGen_Private::FBytePropertyParams to constructe compiled in properties.

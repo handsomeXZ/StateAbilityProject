@@ -7,108 +7,96 @@
 template<typename TOwner, typename TValue>
 class TReactiveProperty;
 
+struct FReactivePropertyOperations : public FPropertyOperationsBase
+{
+	virtual ~FReactivePropertyOperations() {}
+
+	template<typename TOwner>
+	void* GetValueAddress_Check(TOwner* InOwner) const
+	{
+		ensureMsgf(Attribute::TFieldTypeTraits<TOwner>::IsChildOf(GetReactiveModelFieldClass()), TEXT("This reactive property is not valid in TOwner"));
+
+		if (Attribute::TFieldTypeTraits<TOwner>::IsChildOf(GetReactiveModelFieldClass()))
+		{
+			return GetValueAddress(InOwner);
+		}
+		else
+		{
+			return nullptr;
+		}
+	}
+
+	template<typename TOwner, typename TValue>
+	TValue& GetValueRef(void* InOwner) const
+	{
+		return *((TValue*)GetValueAddress_Check((TOwner*)InOwner));
+	}
+
+	template<typename TValue>
+	TValue& GetValueRef(void* InOwner) const
+	{
+		return *((TValue*)GetValueAddress(InOwner));
+	}
+
+	// Pointer to a FViewModelPropertyBase
+	const FReactivePropertyBase* Property = nullptr;
+};
+
 namespace Attribute::Reactive
 {
 	template <typename TOwner, typename TValue>
 	struct TBaseOperation : public FReactivePropertyOperations
 	{
-		using TDecayedValue = typename TDecay<TValue>::Type;
+		using TDecayedValue = TDecay<TValue>::Type;
 
 		const TReactiveProperty<TOwner, TValue>* GetCastedProperty() const
 		{
 			return static_cast<const TReactiveProperty<TOwner, TValue>*>(Property);
 		}
-	};
 
-	/* Implementation of GetValue method */
-	template <typename TBaseOp, typename TOwner, typename TValue, bool bOptional>
-	struct TGetValueOperation;
-
-	template <typename TBaseOp, typename TOwner, typename TValue>
-	struct TGetValueOperation<TBaseOp, TOwner, TValue, true> : public TBaseOp
-	{
-		void GetValue(void* InOwner, void* OutValue, bool& OutHasValue) const override
-		{
-			check(InOwner);
-			check(OutValue);
-
-			TValue Value = this->GetCastedProperty()->GetValue((TOwner*)InOwner);
-			OutHasValue = Value.IsSet();
-			if (OutHasValue)
-			{
-				*((typename TBaseOp::TDecayedValue::ElementType*)OutValue) = Value.GetValue();
-			}
-		}
-	};
-
-	template <typename TBaseOp, typename TOwner, typename TValue>
-	struct TGetValueOperation<TBaseOp, TOwner, TValue, false> : public TBaseOp
-	{
-		void GetValue(void* InOwner, void* OutValue, bool& OutHasValue) const override
-		{
-			check(InOwner);
-			check(OutValue);
-
-			*((typename TBaseOp::TDecayedValue*)OutValue) = this->GetCastedProperty()->GetValue((TOwner*)InOwner);
-			OutHasValue = true;
-		}
-	};
-
-	/* Implementation of SetValue method */
-	template <typename TBaseOp, typename TOwner, typename TValue, bool bOptional>
-	struct TSetValueOperation;
-
-	template <typename TBaseOp, typename TOwner, typename TValue>
-	struct TSetValueOperation<TBaseOp, TOwner, TValue, false> : public TBaseOp
-	{
-		void SetValue(void* InOwner, void* InValue, bool InHasValue = true) const override
-		{
-			check(InOwner);
-			check(InValue);
-
-			this->GetCastedProperty()->SetValue((TOwner*)InOwner, *((typename TBaseOp::TDecayedValue*)InValue));
-		}
-	};
-
-	template <typename TBaseOp, typename TOwner, typename TValue>
-	struct TSetValueOperation<TBaseOp, TOwner, TValue, true> : public TBaseOp
-	{
-		void SetValue(void* InOwner, void* InValue, bool InHasValue = true) const override
-		{
-			check(InOwner);
-			check(InValue);
-
-			if (InHasValue)
-			{
-				this->GetCastedProperty()->SetValue((TOwner*)InOwner, typename TBaseOp::TDecayedValue(*(typename TBaseOp::TDecayedValue::ElementType*)InValue));
-			}
-			else
-			{
-				this->GetCastedProperty()->SetValue((TOwner*)InOwner, typename TBaseOp::TDecayedValue());
-			}
-		}
-	};
-
-
-	/* Implementation of AddFieldClassProperty method and ContainsObjectReference method */
-	template <typename TBaseOp, typename TOwner, typename TValue>
-	struct TAddFieldClassPropertyOperation : public TBaseOp
-	{
-		void AddFieldClassProperty(UField* TargetFieldClass) const override
+		virtual void AddFieldClassProperty(UField* TargetFieldClass) const override
 		{
 			check(TargetFieldClass);
 
-			const TReactiveProperty<TOwner, TValue>* Prop = this->GetCastedProperty();
-			if (Prop->GetFieldOffset() > 0)
+			const TReactiveProperty<TOwner, TValue>* Prop = GetCastedProperty();
+			if (Prop->GetFieldByteOffset() > 0)
 			{
-				TPropertyFactory<typename TDecay<TValue>::Type>::AddProperty(TargetFieldClass, Prop->GetFieldOffset(), Prop->GetName());
+				TPropertyFactory<TDecay<TValue>::Type>::AddProperty(TargetFieldClass, Prop->GetFieldByteOffset(), Prop->GetName());
 			}
 		}
 
-		bool ContainsObjectReference(bool bIncludeNoFieldProperties) const override
+		virtual void* GetValueAddress(void* InOwner) const override
 		{
-			return TPropertyFactory<typename TDecay<TValue>::Type>::ContainsObjectReference &&
-				(this->GetCastedProperty()->GetFieldOffset() > 0 || bIncludeNoFieldProperties);
+			check(InOwner);
+
+			return ((uint8*)InOwner + GetCastedProperty()->GetFieldByteOffset());
+		}
+
+		virtual void GetValueCopy(void* InOwner, void* OutValue) const override
+		{
+			check(InOwner);
+
+			*((TDecayedValue*)OutValue) = GetCastedProperty()->GetValue((TOwner*)InOwner);
+		}
+
+		virtual void GetValue_Effect(void* InOwner, void* OutValue) const override
+		{
+			check(InOwner);
+
+			*((TDecayedValue*)OutValue) = GetCastedProperty()->GetValue_Effect((TOwner*)InOwner);
+		}
+
+		virtual void SetValue(void* InOwner, void* InValue) const override
+		{
+			check(InOwner);
+
+			GetCastedProperty()->SetValue((TOwner*)InOwner, *((TDecayedValue*)InValue));
+		}
+
+		virtual bool ContainsObjectReference(bool bIncludeNoFieldProperties) const override
+		{
+			return TPropertyFactory<TDecay<TValue>::Type>::ContainsObjectReference &&
+				(GetCastedProperty()->GetFieldByteOffset() > 0 || bIncludeNoFieldProperties);
 		}
 	};
 
@@ -122,7 +110,7 @@ namespace Attribute::Reactive
 	template <typename TBaseOp, typename TOwner, typename TValue>
 	struct TReactiveModelFieldClassOperation<TBaseOp, TOwner, TValue, typename TEnableIf<TValueTypeTraits<TOwner>::IsClass>::Type> : public TBaseOp
 	{
-		UField* GetReactiveModelFieldClass() const override
+		virtual UField* GetReactiveModelFieldClass() const override
 		{
 			return TOwner::StaticClass();
 		}
@@ -132,7 +120,7 @@ namespace Attribute::Reactive
 	template <typename TBaseOp, typename TOwner, typename TValue>
 	struct TReactiveModelFieldClassOperation<TBaseOp, TOwner, TValue, typename TEnableIf<TValueTypeTraits<TOwner>::IsStruct>::Type> : public TBaseOp
 	{
-		UField* GetReactiveModelFieldClass() const override
+		virtual UField* GetReactiveModelFieldClass() const override
 		{
 			return TOwner::StaticStruct();
 		}

@@ -67,26 +67,21 @@ namespace Attribute::Reactive
 	{
 		using TDecayedValueType = typename TDecay<TValue>::Type;
 
-		const bool IsOptional = TReactivePropertyTypeTraits<TDecayedValueType>::WithOptional;
-
 		using FBaseOps = TBaseOperation<TOwner, TValue>;
-		using FGetOps = TGetValueOperation<FBaseOps, TOwner, TValue, IsOptional>;
-		using FGetAndSetOps = TSetValueOperation<FGetOps, TOwner, TValue, IsOptional>;
-		using FCombinePropOps = TAddFieldClassPropertyOperation<FGetAndSetOps, TOwner, TValue>;
-		using FFinalReactiveOps = TReactiveModelFieldClassOperation<FCombinePropOps, TOwner, TValue>;
-
+		using FFinalReactiveOps = TReactiveModelFieldClassOperation<FBaseOps, TOwner, TValue>;
 		using FEffectiveOpsType = TReactivePropertyOperations<FFinalReactiveOps>;
 
 		static_assert(sizeof(FReactivePropertyOperations) == sizeof(FEffectiveOpsType), "Generated Operations type cannot fit into OpsBuffer");
 
 		FReactiveRegistry::FAttributeReflection& Reflection = Entry.Reflection;
-
 		const TReactiveProperty<TOwner, TValue>* Prop = PropertyGetterPtr();
-		Prop->AttributeID = FReactiveModelTypeTraitsBase<TOwner>::AttributeCount - 1;
+
+		// The 0 ID is not used for property binding.
+		Prop->AttributeID = FReactiveModelTypeTraitsBase<TOwner>::AttributeCount;
 
 		new (Reflection.GetOperations()) FEffectiveOpsType(Prop);
 
-		Reflection.Flags.IsOptional = IsOptional;
+		Reflection.Flags.IsOptional = TReactivePropertyTypeTraits<TDecayedValueType>::WithOptional;
 		Reflection.Flags.HasPublicGetter = Prop->HasPublicGetter();
 		Reflection.Flags.HasPublicSetter = Prop->HasPublicSetter();
 		return 1;

@@ -5,10 +5,10 @@ PRIVATE_DEFINE_NAMESPACE(FAttributeBindEffect, FAttributeBindEffect::DependencyB
 uint64 FBindEntry::GlobalSerialNumber = 0;
 const FBindEntryHandle FBindEntry::InValidHandle;
 
-TSet<IAttributeBindTracker*> FAttributeBindEffect::GlobalActiveTracker;
+TSet<const IAttributeBindTracker*> FAttributeBindEffect::GlobalActiveTracker;
 TArray<FAttributeBindEffect::FEffectInfo> FAttributeBindEffect::GlobalActiveEffectStack;
 
-FBindEntryHandle FBindEntry::GenerateHandle(int32 Index)
+FBindEntryHandle FBindEntry::GenerateHandle(int32 LayerID, int32 Index)
 {
 	uint64 NewSerialNumber = ++GlobalSerialNumber;
 	if (!ensureMsgf(NewSerialNumber != FBindEntryHandle::MaxSerialNumber, TEXT("BindEntry serial number has wrapped around!")))
@@ -17,39 +17,67 @@ FBindEntryHandle FBindEntry::GenerateHandle(int32 Index)
 	}
 
 	FBindEntryHandle Result;
-	Result.SetIndexAndSerialNumber(Index, NewSerialNumber);
+	Result.SetEntryID(LayerID, Index, NewSerialNumber);
 	return Result;
 }
 
 void FBindEntryContainer::Allocate(int32 EntryCount)
 {
+	int32 OldNum = DataBindings.Num();
 	DataBindings.AddDefaulted(EntryCount);
-}
-
-FBindEntry& FBindEntryContainer::GetBindEntry(int32 LayerID)
-{
-	ensureMsgf(DataBindings.IsValidIndex(LayerID), TEXT("GetBindEntry DataBindings access overflow!!"));
-	return DataBindings[LayerID];
-}
-
-const FBindEntry& FBindEntryContainer::GetBindEntry(int32 LayerID) const
-{
-	ensureMsgf(DataBindings.IsValidIndex(LayerID), TEXT("GetBindEntry DataBindings access overflow!!"));
-	return DataBindings[LayerID];
-}
-
-void FBindEntryContainer::RemoveBinding(const FBindEntryHandle& Handle)
-{
-	ensureMsgf(DataBindings.IsValidIndex(Handle.LayerID), TEXT("UnBind DataBindings access overflow!!"));
-	DataBindings[Handle.LayerID].RemoveDelegate(Handle);
+	for (int32 i = OldNum; i < OldNum + EntryCount; ++i)
+	{
+		DataBindings[i].LayerID = i;
+	}
 }
 
 IAttributeBindTracker::~IAttributeBindTracker()
 {
-	if (bResgiter)
-	{
-		FAttributeBindEffect::GlobalActiveTracker.Remove(this);
-	}
+	CloseTracker();
+}
+
+FAttributeBindEffect::FAttributeBindEffect(FAttributeBindEffect&& Other)
+	: _Owner(Other._Owner)
+	, _Handle(Other._Handle)
+	, _IndexMask(Other._IndexMask)
+	, _Dependencies(Other._Dependencies)
+{
+	Other._Owner = nullptr;
+	Other._Handle.Reset();
+	Other._Dependencies.Empty();
+}
+
+FAttributeBindEffect::FAttributeBindEffect(const FAttributeBindEffect& Other)
+	: _Owner(Other._Owner)
+	, _IndexMask(Other._IndexMask)
+	, _Dependencies(Other._Dependencies)
+{
+	_Owner->CopyBindEntryItem(_Owner->GetTrackerBindEntry(0).GetDelegate(Other._Handle), 0, _Handle);
+}
+
+FAttributeBindEffect& FAttributeBindEffect::operator=(FAttributeBindEffect&& Other)
+{
+	_Owner = Other._Owner;
+	_Handle = Other._Handle;
+	_IndexMask = Other._IndexMask;
+	_Dependencies = Other._Dependencies;
+
+	Other._Owner = nullptr;
+	Other._Handle.Reset();
+	Other._Dependencies.Empty();
+
+	return *this;
+}
+
+FAttributeBindEffect& FAttributeBindEffect::operator=(const FAttributeBindEffect& Other)
+{
+	_Owner = Other._Owner;
+	_IndexMask = Other._IndexMask;
+	_Dependencies = Other._Dependencies;
+
+	_Owner->CopyBindEntryItem(_Owner->GetTrackerBindEntry(0).GetDelegate(Other._Handle), 0, _Handle);
+
+	return *this;
 }
 
 void FAttributeBindEffect::Run()
@@ -58,16 +86,21 @@ void FAttributeBindEffect::Run()
 	{
 		return;
 	}
-
 	// Algo: Uncaptured dependency cleanup.
-	// Allocate sufficient IndexMax.
-	if (IndexMask.GetLen() <= _Dependencies.GetMaxIndex())
-	{
-		IndexMask = FNetBitArray(_Dependencies.GetMaxIndex() + 1);
-	}
 
-	// By default, all elements are uncaptured.
-	IndexMask.MarkAll();
+	_IndexMask.Clear();
+
+	// Allocate sufficient IndexMax.
+	if (!_Dependencies.IsEmpty())
+	{
+		if (_IndexMask.GetLen() <= _Dependencies.GetMaxIndex())
+		{
+			_IndexMask = FNetBitArray(_Dependencies.GetMaxIndex() + 1);
+		}
+
+		// By default, all elements are uncaptured.
+		_IndexMask.AddRange(0, _Dependencies.GetMaxIndex());
+	}
 
 	// Invoke...
 	GlobalActiveEffectStack.Emplace(this, _Owner);
@@ -75,7 +108,7 @@ void FAttributeBindEffect::Run()
 	GlobalActiveEffectStack.RemoveAt(GlobalActiveEffectStack.Num() - 1, EAllowShrinking::No);
 
 	// Clean up uncaptured trackers
-	for (auto It = FNetBitArray::FIterator(IndexMask); It; ++It)
+	for (auto It = FNetBitArray::FIterator(_IndexMask); It; ++It)
 	{
 		FSetElementId ElementId = FSetElementId::FromInteger(*It);
 		if (_Dependencies.GetMaxIndex() < *It)
@@ -88,7 +121,7 @@ void FAttributeBindEffect::Run()
 			continue;
 		}
 
-		TPair<IAttributeBindTracker*, TSet<FBindEntryHandle>>& Dependency = _Dependencies.Get(ElementId);
+		DependencyType::ElementType& Dependency = _Dependencies.Get(ElementId);
 		if (GlobalActiveTracker.Contains(Dependency.Key))
 		{
 			for (FBindEntryHandle& Handle : Dependency.Value)
@@ -104,6 +137,10 @@ void FAttributeBindEffect::Run()
 
 void FAttributeBindEffect::Clear()
 {
+	if (!_Owner)
+	{
+		return;
+	}
 	_Owner->RemoveDependency(_Handle);
 	_Owner = nullptr;
 	_Handle.Reset();
@@ -139,7 +176,7 @@ bool FAttributeBindEffect::IsValid()
 	return false;
 }
 
-void FAttributeBindEffect::UpdateDependency(IAttributeBindTracker* Tracker, int32 LayerID)
+void FAttributeBindEffect::UpdateDependency(const IAttributeBindTracker* Tracker, int32 LayerID)
 {
 	if (GlobalActiveEffectStack.IsEmpty())
 	{
@@ -159,7 +196,7 @@ void FAttributeBindEffect::UpdateDependency(IAttributeBindTracker* Tracker, int3
 	FSetElementId ElementId = InnerSet.FindId(Tracker);
 	if (ElementId.IsValidId())
 	{
-		TopEffect.IndexMask.Remove(ElementId.AsInteger());
+		TopEffect._IndexMask.Remove(ElementId.AsInteger());
 	}
 	else
 	{

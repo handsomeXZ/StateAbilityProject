@@ -4,29 +4,41 @@
 
 #include "Delegates/DelegateSignatureImpl.inl"
 
-#include "AttributeTraits.h"
-#include "AttributeRegistry.h"
-#include "AttributeMacros.h"
-#include "AttributeBinding.h"
+#include "Attribute/Reactive/AttributeTraits.h"
+#include "Attribute/Reactive/AttributeRegistry.h"
+#include "Attribute/Reactive/AttributeMacros.h"
+#include "Attribute/Reactive/AttributeBinding.h"
 
 struct STATEABILITYSCRIPTRUNTIME_API FReactiveModelBase
 {
 	template<typename TOwner>
 	friend struct TReactiveFieldClassInitialization;
 
-	FBindEntry& GetBindEntry(const class FReactivePropertyBase* Property);
-	FORCEINLINE FBindEntry& GetBindEntry(int32 LayerID)
+	FReactiveModelBase()
 	{
-		return BindEntryContainer.GetBindEntry(LayerID);
-	}
-	FORCEINLINE const FBindEntry& GetBindEntry(int32 LayerID) const
-	{
-		return BindEntryContainer.GetBindEntry(LayerID);
+		// By default, one BindEntry is allocated and is not used for binding properties, 
+		// It is only enabled in special scenarios, such as reactive effects, etc.
+		BindEntryContainer.Allocate(1);
 	}
 
-	void RemoveBinding(const FBindEntryHandle& Handle);
+	template <typename TValue>
+	bool SetValue(TValue& Field, typename Attribute::Reactive::TPropertyTypeSelector<TValue>::SetterType InValue);
+
+	FBindEntry& GetBindEntry(const class FReactivePropertyBase* Property) const;
+	FORCEINLINE FBindEntry& GetBindEntry(int32 LayerID) const
+	{
+		return BindEntryContainer.GetBindEntry(LayerID);
+	}
+	FORCEINLINE int32 GetBindEntriesNum() const
+	{
+		return BindEntryContainer.GetBindEntriesNum();
+	}
+
+	void RemoveBinding(const FBindEntryHandle& Handle) const;
+	void ClearBindEntry(const class FReactivePropertyBase* Property) const;
+	void ClearAllBindEntry() const;
 private:
-	FBindEntryContainer BindEntryContainer;
+	mutable FBindEntryContainer BindEntryContainer;
 };
 
 
@@ -35,13 +47,18 @@ struct TReactiveModel : public FReactiveModelBase, public IAttributeBindTracker
 {
 	using ThisFieldClass = FieldClassType;
 
+	FORCEINLINE void MarkDirty(const class FReactivePropertyBase* Property)
+	{
+		OnSetAttributeValue(Property);
+	}
+protected:
 	template<typename TProperty>
-	void OnGetAttributeValue(TProperty* Property);
+	void OnGetAttributeValue(TProperty* Property) const;
 	template<typename TProperty>
 	void OnSetAttributeValue(TProperty* Property);
 
 	template<typename TProperty>
-	void OnGetAttributeValue_Effect(TProperty* Property);
+	void OnGetAttributeValue_Effect(TProperty* Property) const;
 
 private:
 	// IAttributeBindTracker
@@ -51,12 +68,12 @@ private:
 		BindEntry.Execute(Handle);
 	}
 
-	virtual void RemoveDependency(const FBindEntryHandle& Handle) override
+	virtual void RemoveDependency(const FBindEntryHandle& Handle) const override
 	{
 		RemoveBinding(Handle);
 	}
 
-	virtual void CopyBindEntryItem(const FBindEntry::DelegateType& SrcEntryItem, int32 LayerID, FBindEntryHandle& OutHandle) override
+	virtual void CopyBindEntryItem(const FBindEntry::DelegateType& SrcEntryItem, int32 LayerID, FBindEntryHandle& OutHandle) const override
 	{
 		FBindEntry& BindEntry = GetBindEntry(LayerID);
 
@@ -79,7 +96,7 @@ public:
 	constexpr FReactivePropertyBase(const ANSICHAR* InName, int32 InFieldOffset, EAccessorVisibility GetterVisibility, EAccessorVisibility SetterVisibility, bool bInHasSetter)
 		: Name(InName)
 		, AttributeID(INDEX_NONE)
-		, FieldOffset(InFieldOffset)
+		, FieldByteOffset(InFieldOffset)
 		, bGetterIsPublic(GetterVisibility == EAccessorVisibility::V_public)
 		, bSetterIsPublic(SetterVisibility == EAccessorVisibility::V_public)
 		, bHasSetter(bInHasSetter)
@@ -93,9 +110,9 @@ public:
 	}
 
 	/* Returns Offset of a backing field from beginning of owning object */
-	int32 GetFieldOffset() const
+	int32 GetFieldByteOffset() const
 	{
-		return FieldOffset;
+		return FieldByteOffset;
 	}
 
 	/* Returns whether this property has Getter with public visibility */
@@ -127,7 +144,7 @@ private:
 
 	/** Used as main identifier, witch is the ordered AttributeID of the registered property. */
 	mutable int32 AttributeID;
-	int32 FieldOffset;
+	int32 FieldByteOffset;
 	uint8 bGetterIsPublic : 1;
 	uint8 bSetterIsPublic : 1;
 	uint8 bHasSetter : 1;
@@ -150,45 +167,76 @@ public:
 	using FGetterPtr = FGetterReturnType(TOwner::*) ();
 	using FSetterPtr = void (TOwner::*) (FSetterArgumentType);
 
-	constexpr TReactiveProperty(FGetterPtr InGetter, FSetterPtr InSetter, int32 InFieldOffset, EAccessorVisibility GetterVisibility, EAccessorVisibility SetterVisibility, const ANSICHAR* InName)
+	constexpr TReactiveProperty(FGetterPtr InGetter, FSetterPtr InSetter, FGetterPtr InEffectGetter, int32 InFieldOffset, EAccessorVisibility GetterVisibility, EAccessorVisibility SetterVisibility, const ANSICHAR* InName)
 		: FReactivePropertyBase(InName, InFieldOffset, GetterVisibility, SetterVisibility, InSetter != nullptr)
 		, Getter(InGetter)
 		, Setter(InSetter)
+		, EffectGetter(InEffectGetter)
 	{
+
 	}
 
-	/* Returns value of this property from given ViewModel */
-	FGetterReturnType GetValue(FReactiveModelType* Owner) const
+	FORCEINLINE FGetterReturnType GetValue(FReactiveModelType* Owner) const
 	{
 		return (Owner->*Getter)();
 	}
 
-	/* Sets value of this property to given ViewModel */
-	void SetValue(FReactiveModelType* Owner, FSetterArgumentType Value) const
+	FORCEINLINE TValue& GetValueRef(FReactiveModelType* Owner) const
+	{
+		return *(TValue*)((uint8*)Owner + GetFieldByteOffset());
+	}
+
+	FORCEINLINE FGetterReturnType GetValue_Effect(FReactiveModelType* Owner) const
+	{
+		return (Owner->*EffectGetter)();
+	}
+
+	FORCEINLINE void SetValue(FReactiveModelType* Owner, FSetterArgumentType Value) const
 	{
 		if (Setter)
 		{
 			(Owner->*Setter)(Value);
 		}
 	}
-
 private:
 	FGetterPtr Getter;
-	FSetterPtr Setter; // this variable MUST BE the last one due to a bug in MSVC compiler
+	FSetterPtr Setter;
+
+	FGetterPtr EffectGetter;
 };
 
-template<typename TOwner>
-struct TBindEntryHandle : public FBindEntryHandle
+template<typename TValue>
+inline bool FReactiveModelBase::SetValue(TValue& Field, typename Attribute::Reactive::TPropertyTypeSelector<TValue>::SetterType InValue)
 {
-	TBindEntryHandle()
-	{}
+	if constexpr (TReactivePropertyTypeTraits<TValue>::WithSetterIdentical)
+	{
+		if constexpr (TStructOpsTypeTraits<TValue>::WithIdentical)
+		{
+			if (!Field.Identical(&InValue, 0))
+			{
+				Field = InValue;
+				return true;
+			}
+			return false;
+		}
+		else
+		{
+			if (!(Field == InValue))
+			{
+				Field = InValue;
+				return true;
+			}
+			return false;
+		}
+	}
+	else
+	{
+		Field = InValue;
+		return true;
+	}
+}
 
-	TBindEntryHandle(FReactivePropertyBase& Property, FDelegateHandle DelegateHandle)
-		: FBindEntryHandle(Property.GetAttributeID(), DelegateHandle)
-	{}
-};
-
-inline FBindEntry& FReactiveModelBase::GetBindEntry(const FReactivePropertyBase* Property)
+inline FBindEntry& FReactiveModelBase::GetBindEntry(const FReactivePropertyBase* Property) const
 {
 	int32 LayerID = Property->GetAttributeID();
 
@@ -197,7 +245,7 @@ inline FBindEntry& FReactiveModelBase::GetBindEntry(const FReactivePropertyBase*
 
 template<typename FieldClassType>
 template<typename TProperty>
-inline void TReactiveModel<FieldClassType>::OnGetAttributeValue(TProperty* Property)
+inline void TReactiveModel<FieldClassType>::OnGetAttributeValue(TProperty* Property) const
 {
 	
 }
@@ -212,25 +260,74 @@ inline void TReactiveModel<FieldClassType>::OnSetAttributeValue(TProperty* Prope
 
 template<typename FieldClassType>
 template<typename TProperty>
-inline void TReactiveModel<FieldClassType>::OnGetAttributeValue_Effect(TProperty* Property)
+inline void TReactiveModel<FieldClassType>::OnGetAttributeValue_Effect(TProperty* Property) const
 {
 	FAttributeBindEffect::UpdateDependency(this, Property->GetAttributeID());
 }
 
+//////////////////////////////////////////////////////////////////////////
+
 template<typename TOwner, typename TProperty, typename TCallback>
-typename TEnableIf<TIsInvocable<TCallback, typename TProperty::FValueType>::Value, FBindEntryHandle>::Type
-Bind(TOwner* ThisPtr, TProperty* Property, TCallback&& Callback)
+typename TEnableIf<TIsInvocable<TCallback>::Value, FBindEntryHandle>::Type
+inline Bind(TOwner* ThisPtr, TProperty* Property, TCallback&& Callback)
 {
 	FBindEntry& BindEntry = ThisPtr->GetBindEntry(Property);
-	return TBindEntryHandle<TProperty::FReactiveModelType>(*Property, MoveTemp(BindEntry.AddDelegate(FBindEntry::DelegateType::CreateLambda(Forward<TCallback>(Callback)))));
+	
+	return BindEntry.AddDelegate(FBindEntry::DelegateType::CreateLambda(Forward<TCallback>(Callback)));
 }
 
 template<typename TOwner, typename TProperty, typename TMemberPtr>
 typename TEnableIf<TIsMemberPointer<TMemberPtr>::Value, FBindEntryHandle>::Type
-Bind(TOwner* ThisPtr, TProperty* Property, TMemberPtr Callback)
+inline Bind(TOwner* ThisPtr, TProperty* Property, TMemberPtr Callback)
 {
 	FBindEntry& BindEntry = ThisPtr->GetBindEntry(Property);
-	return TBindEntryHandle<TProperty::FReactiveModelType>(*Property, MoveTemp(BindEntry.AddDelegate(FBindEntry::DelegateType::CreateUObject(ThisPtr, Callback))));
+	return BindEntry.AddDelegate(FBindEntry::DelegateType::CreateUObject(ThisPtr, Callback));
+}
+
+template<typename TOwner>
+inline void UnBind(TOwner* ThisPtr, const FBindEntryHandle& Handle)
+{
+	ThisPtr->RemoveBinding(Handle);
+}
+
+template<typename TOwner, typename TCallback>
+typename TEnableIf<TIsInvocable<TCallback>::Value, FAttributeBindEffect>::Type
+inline MakeEffect(TOwner* ThisPtr, TCallback&& Callback)
+{
+	FBindEntry& BindEntry = ThisPtr->GetBindEntry(0);
+	FBindEntryHandle Handle = BindEntry.AddDelegate(FBindEntry::DelegateType::CreateLambda(Forward<TCallback>(Callback)));
+
+	return FAttributeBindEffect(ThisPtr, Handle);
+}
+
+template<typename TOwner, typename TMemberPtr>
+typename TEnableIf<TIsMemberPointer<TMemberPtr>::Value, FAttributeBindEffect>::Type
+inline MakeEffect(TOwner* ThisPtr, TMemberPtr Callback)
+{
+	FBindEntry& BindEntry = ThisPtr->GetBindEntry(0);
+	FBindEntryHandle Handle = BindEntry.AddDelegate(FBindEntry::DelegateType::CreateUObject(ThisPtr, Callback));
+
+	return FAttributeBindEffect(ThisPtr, Handle);
+}
+
+template<typename TOwner, typename TCallback>
+typename TEnableIf<TIsInvocable<TCallback>::Value, FAttributeBindSharedEffect>::Type
+inline MakeSharedEffect(TOwner* ThisPtr, TCallback&& Callback)
+{
+	FBindEntry& BindEntry = ThisPtr->GetBindEntry(0);
+	FBindEntryHandle Handle = BindEntry.AddDelegate(FBindEntry::DelegateType::CreateLambda(Forward<TCallback>(Callback)));
+
+	return FAttributeBindSharedEffect(ThisPtr, Handle);
+}
+
+template<typename TOwner, typename TMemberPtr>
+typename TEnableIf<TIsMemberPointer<TMemberPtr>::Value, FAttributeBindSharedEffect>::Type
+inline MakeSharedEffect(TOwner* ThisPtr, TMemberPtr Callback)
+{
+	FBindEntry& BindEntry = ThisPtr->GetBindEntry(0);
+	FBindEntryHandle Handle = BindEntry.AddDelegate(FBindEntry::DelegateType::CreateUObject(ThisPtr, Callback));
+
+	return FAttributeBindSharedEffect(ThisPtr, Handle);
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -242,8 +339,8 @@ class TReactivePropertyRegistered : public TReactiveProperty<TOwner, TValue>
 	using Super = TReactiveProperty<TOwner, TValue>;
 
 public:
-	constexpr TReactivePropertyRegistered(typename Super::FGetterPtr InGetter, typename Super::FSetterPtr InSetter, int32 InFieldOffset, typename Super::EAccessorVisibility GetterVisibility, typename Super::EAccessorVisibility SetterVisibility, const ANSICHAR* InName)
-		: Super(InGetter, InSetter, InFieldOffset, GetterVisibility, SetterVisibility, InName)
+	constexpr TReactivePropertyRegistered(typename Super::FGetterPtr InGetter, typename Super::FSetterPtr InSetter, typename Super::FGetterPtr InEffectGetterPtr, int32 InFieldOffset, typename Super::EAccessorVisibility GetterVisibility, typename Super::EAccessorVisibility SetterVisibility, const ANSICHAR* InName)
+		: Super(InGetter, InSetter, InEffectGetterPtr, InFieldOffset, GetterVisibility, SetterVisibility, InName)
 	{
 	}
 
