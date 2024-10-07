@@ -114,9 +114,14 @@ struct STATEABILITYSCRIPTRUNTIME_API FBindEntry
 
 	void Broadcast() const
 	{
-		for (const FBindEntryItem& Item : EntryItems)
+		int32 MaxIndex = EntryItems.GetMaxIndex();
+		for (int32 Index = 0; Index <= MaxIndex; ++Index)
 		{
-			Item.Delegate.ExecuteIfBound();
+			if (EntryItems.IsValidIndex(Index))
+			{
+				const FBindEntryItem& Item = EntryItems[Index];
+				Item.Delegate.ExecuteIfBound();
+			}
 		}
 	}
 
@@ -285,11 +290,11 @@ private:
  */
 struct STATEABILITYSCRIPTRUNTIME_API FAttributeBindEffect
 {
-	friend struct IAttributeBindTracker;
-	typedef TPair<FAttributeBindEffect*, const IAttributeBindTracker*> FEffectInfo;
+	friend struct FAttributeBindTracker;
+	typedef TPair<FAttributeBindEffect*, const FAttributeBindTracker*> FEffectInfo;
 
 	FAttributeBindEffect() {}
-	FAttributeBindEffect(const IAttributeBindTracker* Owner, const FBindEntryHandle& Handle)
+	FAttributeBindEffect(const FAttributeBindTracker* Owner, const FBindEntryHandle& Handle)
 		: _Owner(Owner)
 		, _Handle(Handle)
 	{
@@ -309,28 +314,31 @@ struct STATEABILITYSCRIPTRUNTIME_API FAttributeBindEffect
 	void Run();
 	void Clear();
 	bool IsValid();
-	static void UpdateDependency(const IAttributeBindTracker* Tracker, int32 LayerID);
+	static void AddDependency(const FAttributeBindTracker* Tracker, int32 LayerID);
 
-	// MakeEffect需要放在Reactive头文件中实现
+	void UpdateDependencyBegin();
+	void UpdateDependencyEnd();
+
 private:
-	using DependencyType = TMap<const IAttributeBindTracker*, TSet<FBindEntryHandle>>;
-	using DependencyBaseType = TMapBase<const IAttributeBindTracker*, TSet<FBindEntryHandle>, FDefaultSetAllocator, TDefaultMapHashableKeyFuncs<const IAttributeBindTracker*, TSet<FBindEntryHandle>, false>>;
-	using DependencyInnerSetType = TSet<DependencyType::ElementType, TDefaultMapHashableKeyFuncs<const IAttributeBindTracker*, TSet<FBindEntryHandle>, false>, FDefaultSetAllocator>;
+	using DependencyType = TMap<const FAttributeBindTracker*, TSet<FBindEntryHandle>>;
+	using DependencyBaseType = TMapBase<const FAttributeBindTracker*, TSet<FBindEntryHandle>, FDefaultSetAllocator, TDefaultMapHashableKeyFuncs<const FAttributeBindTracker*, TSet<FBindEntryHandle>, false>>;
+	using DependencyInnerSetType = TSet<DependencyType::ElementType, TDefaultMapHashableKeyFuncs<const FAttributeBindTracker*, TSet<FBindEntryHandle>, false>, FDefaultSetAllocator>;
 	PRIVATE_DECLARE_NAMESPACE(DependencyBaseType, DependencyInnerSetType, Pairs)
 
-	const IAttributeBindTracker* _Owner = nullptr;
+	const FAttributeBindTracker* _Owner = nullptr;
 	FBindEntryHandle _Handle;
 	FNetBitArray _IndexMask;
+	uint64 bIsUpdatingDependency : 1 = false;
 	DependencyType _Dependencies; // 依赖的可靠性由GlobalActiveTracker来保证。依赖仅被用于RemoveBinding，所以即使UObject被标记为回收，也无妨，因为我们不会执行内部逻辑，仅仅是移除一些数据。
 
-	static TSet<const IAttributeBindTracker*> GlobalActiveTracker;
+	static TSet<const FAttributeBindTracker*> GlobalActiveTracker;
 	static TArray<FEffectInfo> GlobalActiveEffectStack;
 };
 
 struct STATEABILITYSCRIPTRUNTIME_API FAttributeBindSharedEffect
 {
 	FAttributeBindSharedEffect() {}
-	FAttributeBindSharedEffect(const IAttributeBindTracker* Owner, const FBindEntryHandle& Handle)
+	FAttributeBindSharedEffect(const FAttributeBindTracker* Owner, const FBindEntryHandle& Handle)
 		: SharedEffectPtr(MakeShared<FAttributeBindEffect>(Owner, Handle))
 	{
 		
@@ -363,15 +371,62 @@ private:
 	TSharedPtr<FAttributeBindEffect> SharedEffectPtr;
 };
 
-struct STATEABILITYSCRIPTRUNTIME_API IAttributeBindTracker
+struct STATEABILITYSCRIPTRUNTIME_API FAttributeBindTracker
 {
 	friend struct FAttributeBindEffect;
 
-	virtual ~IAttributeBindTracker();
-	virtual void Invoke(const FBindEntryHandle& Handle) const = 0;
-	virtual void RemoveDependency(const FBindEntryHandle& Handle) const = 0;
-	virtual void CopyBindEntryItem(const FBindEntry::DelegateType& SrcEntryItem, int32 LayerID, FBindEntryHandle& OutHandle) const = 0;
-	virtual const FBindEntry& GetTrackerBindEntry(int32 LayerID) const = 0;
+	~FAttributeBindTracker()
+	{
+		CloseTracker();
+	}
+
+	FORCEINLINE void Invoke(const FBindEntryHandle& Handle) const
+	{
+		const FBindEntry& BindEntry = GetBindEntry(Handle.GetLayerID());
+		BindEntry.Execute(Handle);
+	}
+
+	FORCEINLINE void CopyBindEntryItem(const FBindEntry::DelegateType& SrcEntryItem, int32 LayerID, FBindEntryHandle& OutHandle) const
+	{
+		FBindEntry& BindEntry = GetBindEntry(LayerID);
+
+		OutHandle = BindEntry.AddDelegateCopyFrom(SrcEntryItem);
+	}
+
+	FORCEINLINE const FBindEntry& GetTrackerBindEntry(int32 LayerID) const
+	{
+		return GetBindEntry(LayerID);
+	}
+
+	FORCEINLINE FBindEntry& GetBindEntry(int32 LayerID) const
+	{
+		return BindEntryContainer.GetBindEntry(LayerID);
+	}
+
+	FORCEINLINE int32 GetBindEntriesNum() const
+	{
+		return BindEntryContainer.GetBindEntriesNum();
+	}
+
+	FORCEINLINE void AllocateBindEntry(int32 Count)
+	{
+		BindEntryContainer.Allocate(Count);
+	}
+
+	FORCEINLINE void RemoveBinding(const FBindEntryHandle& Handle) const
+	{
+		BindEntryContainer.RemoveBinding(Handle);
+	}
+
+	FORCEINLINE void ClearBindEntry(int32 LayerID) const
+	{
+		BindEntryContainer.ClearBindEntry(LayerID);
+	}
+
+	FORCEINLINE void ClearAllBindEntry() const
+	{
+		BindEntryContainer.ClearAllBindEntry();
+	}
 
 	FORCEINLINE void CloseTracker()
 	{
@@ -380,6 +435,9 @@ struct STATEABILITYSCRIPTRUNTIME_API IAttributeBindTracker
 			FAttributeBindEffect::GlobalActiveTracker.Remove(this);
 		}
 	}
+
+protected:
+	mutable FBindEntryContainer BindEntryContainer;
 private:
 	mutable bool bResgiter = false;
 };

@@ -9,11 +9,8 @@
 #include "Attribute/Reactive/AttributeMacros.h"
 #include "Attribute/Reactive/AttributeBinding.h"
 
-struct STATEABILITYSCRIPTRUNTIME_API FReactiveModelBase
+struct STATEABILITYSCRIPTRUNTIME_API FReactiveModelBase : public FAttributeBindTracker
 {
-	template<typename TOwner>
-	friend struct TReactiveFieldClassInitialization;
-
 	FReactiveModelBase()
 	{
 		// By default, one BindEntry is allocated and is not used for binding properties, 
@@ -21,37 +18,23 @@ struct STATEABILITYSCRIPTRUNTIME_API FReactiveModelBase
 		BindEntryContainer.Allocate(1);
 	}
 
+	using FAttributeBindTracker::GetBindEntry;
+	using FAttributeBindTracker::ClearBindEntry;
+
 	template <typename TValue>
 	bool SetValue(TValue& Field, typename Attribute::Reactive::TPropertyTypeSelector<TValue>::SetterType InValue);
 
 	FBindEntry& GetBindEntry(const class FReactivePropertyBase* Property) const;
-	FORCEINLINE FBindEntry& GetBindEntry(int32 LayerID) const
-	{
-		return BindEntryContainer.GetBindEntry(LayerID);
-	}
-	FORCEINLINE int32 GetBindEntriesNum() const
-	{
-		return BindEntryContainer.GetBindEntriesNum();
-	}
-
-	void RemoveBinding(const FBindEntryHandle& Handle) const;
 	void ClearBindEntry(const class FReactivePropertyBase* Property) const;
-	void ClearAllBindEntry() const;
-private:
-	mutable FBindEntryContainer BindEntryContainer;
-};
-
-
-template<typename FieldClassType>
-struct TReactiveModel : public FReactiveModelBase, public IAttributeBindTracker
-{
-	using ThisFieldClass = FieldClassType;
-
-	FORCEINLINE void MarkDirty(const class FReactivePropertyBase* Property)
-	{
-		OnSetAttributeValue(Property);
-	}
+	void MarkDirty(int32 LayerID);
+	void MarkDirty(const class FReactivePropertyBase* Property);
 protected:
+	friend struct FAttributeReactiveBag;
+
+	void OnGetAttributeValue(int32 LayerID) const;
+	void OnSetAttributeValue(int32 LayerID);
+	void OnGetAttributeValue_Effect(int32 LayerID) const;
+
 	template<typename TProperty>
 	void OnGetAttributeValue(TProperty* Property) const;
 	template<typename TProperty>
@@ -59,31 +42,13 @@ protected:
 
 	template<typename TProperty>
 	void OnGetAttributeValue_Effect(TProperty* Property) const;
+};
 
-private:
-	// IAttributeBindTracker
-	virtual void Invoke(const FBindEntryHandle& Handle) const override
-	{
-		const FBindEntry& BindEntry = GetBindEntry(Handle.GetLayerID());
-		BindEntry.Execute(Handle);
-	}
 
-	virtual void RemoveDependency(const FBindEntryHandle& Handle) const override
-	{
-		RemoveBinding(Handle);
-	}
-
-	virtual void CopyBindEntryItem(const FBindEntry::DelegateType& SrcEntryItem, int32 LayerID, FBindEntryHandle& OutHandle) const override
-	{
-		FBindEntry& BindEntry = GetBindEntry(LayerID);
-
-		OutHandle = BindEntry.AddDelegateCopyFrom(SrcEntryItem);
-	}
-	virtual const FBindEntry& GetTrackerBindEntry(int32 LayerID) const override
-	{
-		return GetBindEntry(LayerID);
-	}
-	// ~IAttributeBindTracker
+template<typename FieldClassType>
+struct TReactiveModel : public FReactiveModelBase
+{
+	using ThisFieldClass = FieldClassType;
 
 };
 
@@ -243,26 +208,22 @@ inline FBindEntry& FReactiveModelBase::GetBindEntry(const FReactivePropertyBase*
 	return BindEntryContainer.GetBindEntry(LayerID);
 }
 
-template<typename FieldClassType>
 template<typename TProperty>
-inline void TReactiveModel<FieldClassType>::OnGetAttributeValue(TProperty* Property) const
+inline void FReactiveModelBase::OnGetAttributeValue(TProperty* Property) const
 {
 	
 }
 
-template<typename FieldClassType>
 template<typename TProperty>
-inline void TReactiveModel<FieldClassType>::OnSetAttributeValue(TProperty* Property)
+inline void FReactiveModelBase::OnSetAttributeValue(TProperty* Property)
 {
-	FBindEntry& BindEntry = GetBindEntry(Property);
-	BindEntry.Broadcast();
+	OnSetAttributeValue(Property->GetAttributeID());
 }
 
-template<typename FieldClassType>
 template<typename TProperty>
-inline void TReactiveModel<FieldClassType>::OnGetAttributeValue_Effect(TProperty* Property) const
+inline void FReactiveModelBase::OnGetAttributeValue_Effect(TProperty* Property) const
 {
-	FAttributeBindEffect::UpdateDependency(this, Property->GetAttributeID());
+	OnGetAttributeValue_Effect(Property->GetAttributeID());
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -370,6 +331,6 @@ struct TReactiveFieldClassInitialization
 {
 	TReactiveFieldClassInitialization(struct FReactiveModelBase* ModelPtr)
 	{
-		ModelPtr->BindEntryContainer.Allocate(FReactiveModelTypeTraitsBase<TOwner>::AttributeCount);
+		ModelPtr->AllocateBindEntry(FReactiveModelTypeTraitsBase<TOwner>::AttributeCount);
 	}
 };

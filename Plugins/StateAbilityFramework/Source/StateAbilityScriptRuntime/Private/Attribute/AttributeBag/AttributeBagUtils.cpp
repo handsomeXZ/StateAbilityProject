@@ -6,29 +6,11 @@
 #include "Engine/PackageMapClient.h"
 #include "Engine/UserDefinedStruct.h"
 
+#include "Attribute/Reactive/AttributeReactive.h"
+#include "Attribute/Reactive/AttributeRegistry.h"
+
 
 DEFINE_LOG_CATEGORY_STATIC(LogAttributeBag, Log, All);
-
-
-void IAttributeListenerInterface::Initialize(UWorld* World)
-{
-	check(World);
-
-	EntitySubsystem = World->GetSubsystem<UMassEntitySubsystem>();
-}
-
-void IAttributeListenerInterface::Release(UObject* Owner)
-{
-	if (EntitySubsystem.IsValid())
-	{
-		FAttributeProviderFragment* ProviderFragment = EntitySubsystem->GetEntityManager().GetFragmentDataPtr<FAttributeProviderFragment>(EntityHandle);
-
-		if (ProviderFragment)
-		{
-			ProviderFragment->Listeners.Remove(Owner);
-		}
-	}
-}
 
 //////////////////////////////////////////////////////////////////////////
 // FAttributeBag
@@ -44,12 +26,13 @@ FAttributeBag& FAttributeBag::operator=(const FAttributeBag& InOther)
 {
 	return *this;
 }
-void FAttributeBag::MarkDirty(const int32 Index)
+
+void FAttributeBag::MarkDirty(const int32 Index, bool bValueChanged /* = false */)
 {
 	RawDirtyMark.Add(Index);
 }
 
-void FAttributeBag::MarkAllDirty()
+void FAttributeBag::MarkAllDirty(bool bValueChanged /* = false */)
 {
 	RawDirtyMark.MarkAll();
 }
@@ -92,6 +75,7 @@ FAttributeEntityBag::FAttributeEntityBag(const UScriptStruct* InDataStruct)
 	: Super()
 	, DataStruct(const_cast<UScriptStruct*>(InDataStruct))
 {
+
 }
 
 FAttributeEntityBag::FAttributeEntityBag(const FAttributeEntityBag& InOther)
@@ -114,6 +98,24 @@ FAttributeEntityBag::~FAttributeEntityBag()
 
 }
 
+void FAttributeEntityBag::MarkDirty(const FName Name, bool bValueChanged)
+{
+	Super::MarkDirty(Name, bValueChanged);
+
+	if (IsDataValid())
+	{
+		int32 index = 0;
+		for (TFieldIterator<FProperty> It(DataStruct); It; ++It, ++index)
+		{
+			FProperty* Property = *It;
+			if (Property && Property->GetFName() == Name)
+			{
+				MarkDirty(index, bValueChanged);
+			}
+		}
+	}
+}
+
 bool FAttributeEntityBag::IsDataValid() const
 {
 	return DataStruct != nullptr && AttributeEntity.IsDataValid();
@@ -123,7 +125,7 @@ void FAttributeEntityBag::Initialize(FAttributeEntityBuildParam& BuildParam)
 {
 	UMassEntitySubsystem* EntitySubsystem = BuildParam.World->GetSubsystem<UMassEntitySubsystem>();
 	check(EntitySubsystem);
-
+	ensureMsgf(DataStruct->IsChildOf(FMassFragment::StaticStruct()), TEXT("The EntityBag DataStruct must be derived from the FMassFragment."));
 
 	// 缓存RepProps信息
 	FAttributeNetSharedFragment TemplateSharedFragment;
@@ -143,13 +145,14 @@ void FAttributeEntityBag::Initialize(FAttributeEntityBuildParam& BuildParam)
 	}
 
 	BuildParam.ArchetypeFragment.Add(DataStruct);
-	BuildParam.ArchetypeFragment.Add(FAttributeProviderFragment::StaticStruct());
 	BuildParam.ArchetypeFragment.Add(FAttributeNetFragment::StaticStruct());
 	BuildParam.ArchetypeFragment.Add(FAttributeTagFragment::StaticStruct());
 
 	BuildParam.SharedFragmentValue.AddSharedFragment(SharedFragmentView);
 
 	//BuildParam.ArchetypeFragment.Add(FAttributeNetRoleTagFragment::StaticStruct());
+
+	BuildParam.SharedFragmentValue.Sort();
 
 	AttributeEntity.Initialize(BuildParam);
 }
@@ -351,6 +354,7 @@ bool FAttributeEntityBag::NetDeltaSerialize(FNetDeltaSerializeInfo& deltaParms)
 					const FProperty* prop = PropArray[index];
 					int32 propOffset = prop->GetOffset_ForInternal();
 					NetSerializeItem(prop, reader, deltaParms.Map, GetMutableMemory() + propOffset);
+					MarkDirty(index, true);
 
 					changes.Add(index);
 				}
@@ -402,6 +406,7 @@ bool FAttributeEntityBag::NetSerializeDirtyItem(FArchive& Ar, UPackageMap* Map, 
 		if (It.IsMarked())
 		{
 			NetSerializeItem(Prop, Ar, Map, data);
+			MarkDirty(*It, true);
 		}
 
 		if (Ar.IsError())
@@ -499,6 +504,18 @@ FAttributeDynamicBag::FAttributeDynamicBag()
 
 }
 
+FAttributeDynamicBag::FAttributeDynamicBag(const UScriptStruct* InDataStruct)
+	: Super(UAttributeBagStruct::GetOrCreateFromScriptStruct(InDataStruct))
+{
+	DataStruct->SetSuperStruct(FMassFragment::StaticStruct());
+}
+
+FAttributeDynamicBag& FAttributeDynamicBag::operator=(const FAttributeDynamicBag& InOther)
+{
+	Super::operator=(InOther);
+	return *this;
+}
+
 FAttributeDynamicBag::~FAttributeDynamicBag()
 {
 
@@ -520,6 +537,16 @@ const FAttributeBagPropertyDesc* FAttributeDynamicBag::FindPropertyDescByName(co
 		return BagStruct->FindPropertyDescByName(Name);
 	}
 	return nullptr;
+}
+
+void FAttributeDynamicBag::MarkDirty(const FName Name, bool bValueChanged)
+{
+	FAttributeBag::MarkDirty(Name, bValueChanged);
+
+	if (const UAttributeBagStruct* BagStruct = GetAttributeBagStruct())
+	{
+		MarkDirty(BagStruct->FindPropertyDescByName(Name)->Index, bValueChanged);
+	}
 }
 
 int32 FAttributeDynamicBag::GetPropertyNum() const
@@ -659,6 +686,7 @@ bool FAttributeDynamicBag::NetSerializeDirtyItem(FArchive& Ar, UPackageMap* Map,
 
 		const FAttributeBagPropertyDesc* PropertyDesc = FindPropertyDescByIndex(index);
 		NetSerializeItem(PropertyDesc->CachedProperty, Ar, Map, data + PropertyDesc->CachedProperty->GetOffset_ForInternal());
+		MarkDirty(index, true);
 
 		if (Ar.IsError())
 		{
@@ -685,4 +713,137 @@ void* FAttributeDynamicBag::GetMutableValueAddress(const FAttributeBagPropertyDe
 		return nullptr;
 	}
 	return GetMutableMemory() + Desc->CachedProperty->GetOffset_ForInternal();
+}
+
+//////////////////////////////////////////////////////////////////////////
+
+FAttributeReactiveBag::FAttributeReactiveBag()
+	: ModelStruct(nullptr)
+	, CppPropCount(0)
+{
+}
+
+FAttributeReactiveBag::FAttributeReactiveBag(const FAttributeReactiveBag& InOther)
+	: Super(InOther)
+	, ModelStruct(InOther.ModelStruct)
+	, CppPropCount(InOther.CppPropCount)
+{
+}
+
+FAttributeReactiveBag& FAttributeReactiveBag::operator=(const FAttributeReactiveBag& InOther)
+{
+	Super::operator=(InOther);
+	ModelStruct = InOther.ModelStruct;
+	CppPropCount = InOther.CppPropCount;
+	return *this;
+}
+
+bool FAttributeReactiveBag::IsDataValid() const
+{
+	return Super::IsDataValid() && ModelStruct != nullptr;
+}
+
+void FAttributeReactiveBag::Initialize(FAttributeEntityBuildParam& BuildParam)
+{
+	Super::Initialize(BuildParam);
+
+	if (uint8* RawData = GetMutableMemory())
+	{
+		FReactiveModelBase* ReactiveModel = (FReactiveModelBase*)RawData;
+		
+		// Initialize struct to its default state
+		ModelStruct->InitializeStruct(ReactiveModel);
+
+		if (ReactiveModel->GetBindEntriesNum() < GetPropertyNum())
+		{
+			ReactiveModel->AllocateBindEntry(GetPropertyNum() - ReactiveModel->GetBindEntriesNum());
+		}
+	}
+}
+
+void FAttributeReactiveBag::MarkDirty(const int32 Index, bool bValueChanged)
+{
+	Super::MarkDirty(Index, bValueChanged);
+
+	if (!bValueChanged)
+	{
+		return;
+	}
+
+	const FAttributeBagPropertyDesc* PropertyDesc = FindPropertyDescByIndex(Index);
+	if (!PropertyDesc)
+	{
+		return;
+	}
+
+	if (uint8* RawData = GetMutableMemory())
+	{
+		FReactiveModelBase* ReactiveModel = (FReactiveModelBase*)RawData;
+		ReactiveModel->MarkDirty(Index + 1);
+	}
+}
+
+void FAttributeReactiveBag::MarkAllDirty(bool bValueChanged)
+{
+	Super::MarkAllDirty(bValueChanged);
+
+	if (!bValueChanged)
+	{
+		return;
+	}
+
+	if (uint8* RawData = GetMutableMemory())
+	{
+		FReactiveModelBase* ReactiveModel = (FReactiveModelBase*)RawData;
+		for (int32 index = 0; index < GetPropertyNum(); ++index)
+		{
+			ReactiveModel->MarkDirty(index + 1);
+		}
+	}
+}
+
+bool FAttributeReactiveBag::Serialize(FArchive& Ar)
+{
+	return Super::Serialize(Ar);
+}
+
+bool FAttributeReactiveBag::NetDeltaSerialize(FNetDeltaSerializeInfo& deltaParms)
+{
+	return Super::NetDeltaSerialize(deltaParms);
+}
+
+const void* FAttributeReactiveBag::GetValueAddress(const FAttributeBagPropertyDesc* Desc) const
+{
+	const void* ValueAddress = Super::GetValueAddress(Desc);
+
+	if (!ValueAddress)
+	{
+		return nullptr;
+	}
+
+	if (const uint8* RawData = GetMemory())
+	{
+		const FReactiveModelBase* ReactiveModel = (const FReactiveModelBase*)RawData;
+		ReactiveModel->OnGetAttributeValue_Effect(Desc->Index + 1);
+	}
+
+	return ValueAddress;
+}
+
+void* FAttributeReactiveBag::GetMutableValueAddress(const FAttributeBagPropertyDesc* Desc)
+{
+	void* ValueAddress = Super::GetMutableValueAddress(Desc);
+
+	if (!ValueAddress)
+	{
+		return nullptr;
+	}
+
+	if (uint8* RawData = GetMutableMemory())
+	{
+		FReactiveModelBase* ReactiveModel = (FReactiveModelBase*)RawData;
+		ReactiveModel->OnGetAttributeValue_Effect(Desc->Index + 1);
+	}
+
+	return ValueAddress;
 }

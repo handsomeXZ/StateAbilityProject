@@ -5,7 +5,7 @@ PRIVATE_DEFINE_NAMESPACE(FAttributeBindEffect, FAttributeBindEffect::DependencyB
 uint64 FBindEntry::GlobalSerialNumber = 0;
 const FBindEntryHandle FBindEntry::InValidHandle;
 
-TSet<const IAttributeBindTracker*> FAttributeBindEffect::GlobalActiveTracker;
+TSet<const FAttributeBindTracker*> FAttributeBindEffect::GlobalActiveTracker;
 TArray<FAttributeBindEffect::FEffectInfo> FAttributeBindEffect::GlobalActiveEffectStack;
 
 FBindEntryHandle FBindEntry::GenerateHandle(int32 LayerID, int32 Index)
@@ -29,11 +29,6 @@ void FBindEntryContainer::Allocate(int32 EntryCount)
 	{
 		DataBindings[i].LayerID = i;
 	}
-}
-
-IAttributeBindTracker::~IAttributeBindTracker()
-{
-	CloseTracker();
 }
 
 FAttributeBindEffect::FAttributeBindEffect(FAttributeBindEffect&& Other)
@@ -86,6 +81,21 @@ void FAttributeBindEffect::Run()
 	{
 		return;
 	}
+
+	UpdateDependencyBegin();
+	_Owner->Invoke(_Handle);
+	UpdateDependencyEnd();
+}
+
+void FAttributeBindEffect::UpdateDependencyBegin()
+{
+	if (bIsUpdatingDependency || !IsValid())
+	{
+		return;
+	}
+
+	bIsUpdatingDependency = true;
+
 	// Algo: Uncaptured dependency cleanup.
 
 	_IndexMask.Clear();
@@ -104,7 +114,15 @@ void FAttributeBindEffect::Run()
 
 	// Invoke...
 	GlobalActiveEffectStack.Emplace(this, _Owner);
-	_Owner->Invoke(_Handle);
+}
+
+void FAttributeBindEffect::UpdateDependencyEnd()
+{
+	if (!bIsUpdatingDependency || !IsValid())
+	{
+		return;
+	}
+
 	GlobalActiveEffectStack.RemoveAt(GlobalActiveEffectStack.Num() - 1, EAllowShrinking::No);
 
 	// Clean up uncaptured trackers
@@ -126,13 +144,15 @@ void FAttributeBindEffect::Run()
 		{
 			for (FBindEntryHandle& Handle : Dependency.Value)
 			{
-				Dependency.Key->RemoveDependency(Handle);
+				Dependency.Key->RemoveBinding(Handle);
 			}
 		}
 
 		DependencyInnerSetType& InnerSet = PRIVATE_GET_NAMESPACE(FAttributeBindEffect, &_Dependencies, Pairs);
 		InnerSet.Remove(ElementId);
 	}
+
+	bIsUpdatingDependency = false;
 }
 
 void FAttributeBindEffect::Clear()
@@ -141,7 +161,7 @@ void FAttributeBindEffect::Clear()
 	{
 		return;
 	}
-	_Owner->RemoveDependency(_Handle);
+	_Owner->RemoveBinding(_Handle);
 	_Owner = nullptr;
 	_Handle.Reset();
 
@@ -154,7 +174,7 @@ void FAttributeBindEffect::Clear()
 
 		for (FBindEntryHandle& Handle : Dependency.Value)
 		{
-			Dependency.Key->RemoveDependency(Handle);
+			Dependency.Key->RemoveBinding(Handle);
 		}
 	}
 
@@ -163,7 +183,7 @@ void FAttributeBindEffect::Clear()
 
 bool FAttributeBindEffect::IsValid()
 {
-	if (_Owner || !_Handle.IsValid())
+	if (!_Owner || !_Handle.IsValid())
 	{
 		return false;
 	}
@@ -176,7 +196,7 @@ bool FAttributeBindEffect::IsValid()
 	return false;
 }
 
-void FAttributeBindEffect::UpdateDependency(const IAttributeBindTracker* Tracker, int32 LayerID)
+void FAttributeBindEffect::AddDependency(const FAttributeBindTracker* Tracker, int32 LayerID)
 {
 	if (GlobalActiveEffectStack.IsEmpty())
 	{

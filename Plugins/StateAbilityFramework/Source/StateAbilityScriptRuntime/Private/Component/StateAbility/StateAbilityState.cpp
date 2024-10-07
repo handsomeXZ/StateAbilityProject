@@ -7,18 +7,16 @@
 UStateAbilityState::UStateAbilityState(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 	, bIsPersistent(false)
-	, AttributeStruct(nullptr)
 {
-	AttributeStruct = FAttribute_State::StaticStruct();
+	InitializeAttribute<FAttribute_State>();
 }
 
 void UStateAbilityState::Initialize(FAttributeEntityBuildParam& BuildParam)
 {
-	BuildParam.ArchetypeFragment.Add(AttributeStruct);
 	AttributeBag.Initialize(BuildParam);
 
 	FAttribute_State& StateAttribute = AttributeBag.Get<FAttribute_State>();
-	StateAttribute.Stage = EStateAbilityStateStage::Initialized;
+	StateAttribute.SetStage(EStateAbilityStateStage::Initialized);
 
 	OnInitialize();
 
@@ -28,7 +26,7 @@ void UStateAbilityState::Initialize(FAttributeEntityBuildParam& BuildParam)
 void UStateAbilityState::Activate()
 {
 	FAttribute_State& StateAttribute = AttributeBag.Get<FAttribute_State>();
-	StateAttribute.Stage = EStateAbilityStateStage::Activated;
+	StateAttribute.SetStage(EStateAbilityStateStage::Activated);
 
 	OnActivate();
 
@@ -38,7 +36,7 @@ void UStateAbilityState::Activate()
 void UStateAbilityState::Deactivate()
 {
 	FAttribute_State& StateAttribute = AttributeBag.Get<FAttribute_State>();
-	StateAttribute.Stage = EStateAbilityStateStage::Unactivated;
+	StateAttribute.SetStage(EStateAbilityStateStage::Unactivated);
 
 	OnDeactivate();
 

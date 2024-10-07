@@ -187,6 +187,8 @@ namespace Attribute::StructUtils
 	FProperty* CreatePropertyFromDesc(const FAttributeBagPropertyDesc& Desc, const FFieldVariant PropertyScope)
 	{
 		// Handle array and nested containers properties
+		FProperty* ResultProp = nullptr;
+
 		if (Desc.ContainerTypes.Num() > 0)
 		{
 			FProperty* Prop = nullptr; // the first created container will fill the return value, nested ones will fill the inner
@@ -224,144 +226,163 @@ namespace Attribute::StructUtils
 			InnerDesc.ContainerTypes.Reset();
 			*ValuePropertyPtr = CreatePropertyFromDesc(InnerDesc, PropertyOwner);
 
-			return Prop;
+			ResultProp = Prop;
 		}
-
-		switch (Desc.ValueType)
+		else
 		{
-		case EAttributeBagPropertyType::Bool:
-		{
-			FBoolProperty* Prop = new FBoolProperty(PropertyScope, Desc.Name, RF_Public);
-			Prop->SetBoolSize(sizeof(bool), true); // Enable native access (init the whole byte, rather than just first bit)
-			return Prop;
-		}
-		case EAttributeBagPropertyType::Byte:
-		{
-			FByteProperty* Prop = new FByteProperty(PropertyScope, Desc.Name, RF_Public);
-			Prop->SetPropertyFlags(CPF_HasGetValueTypeHash);
-			return Prop;
-		}
-		case EAttributeBagPropertyType::Int32:
-		{
-			FIntProperty* Prop = new FIntProperty(PropertyScope, Desc.Name, RF_Public);
-			Prop->SetPropertyFlags(CPF_HasGetValueTypeHash);
-			return Prop;
-		}
-		case EAttributeBagPropertyType::Int64:
-		{
-			FInt64Property* Prop = new FInt64Property(PropertyScope, Desc.Name, RF_Public);
-			Prop->SetPropertyFlags(CPF_HasGetValueTypeHash);
-			return Prop;
-		}
-		case EAttributeBagPropertyType::Float:
-		{
-			FFloatProperty* Prop = new FFloatProperty(PropertyScope, Desc.Name, RF_Public);
-			Prop->SetPropertyFlags(CPF_HasGetValueTypeHash);
-			return Prop;
-		}
-		case EAttributeBagPropertyType::Double:
-		{
-			FDoubleProperty* Prop = new FDoubleProperty(PropertyScope, Desc.Name, RF_Public);
-			Prop->SetPropertyFlags(CPF_HasGetValueTypeHash);
-			return Prop;
-		}
-		case EAttributeBagPropertyType::Name:
-		{
-			FNameProperty* Prop = new FNameProperty(PropertyScope, Desc.Name, RF_Public);
-			Prop->SetPropertyFlags(CPF_HasGetValueTypeHash);
-			return Prop;
-		}
-		case EAttributeBagPropertyType::String:
-		{
-			FStrProperty* Prop = new FStrProperty(PropertyScope, Desc.Name, RF_Public);
-			Prop->SetPropertyFlags(CPF_HasGetValueTypeHash);
-			return Prop;
-		}
-		case EAttributeBagPropertyType::Text:
-		{
-			FTextProperty* Prop = new FTextProperty(PropertyScope, Desc.Name, RF_Public);
-			return Prop;
-		}
-		case EAttributeBagPropertyType::Enum:
-			if (UEnum* Enum = const_cast<UEnum*>(Cast<UEnum>(Desc.ValueTypeObject)))
+			switch (Desc.ValueType)
 			{
-				FEnumProperty* Prop = new FEnumProperty(PropertyScope, Desc.Name, RF_Public);
-				FNumericProperty* UnderlyingProp = new FByteProperty(Prop, "UnderlyingType", RF_Public); // HACK: Hardwire to byte property for now for BP compatibility
-				Prop->SetEnum(Enum);
-				Prop->AddCppProperty(UnderlyingProp);
-				return Prop;
+			case EAttributeBagPropertyType::Bool:
+			{
+				FBoolProperty* Prop = new FBoolProperty(PropertyScope, Desc.Name, RF_Public);
+				Prop->SetBoolSize(sizeof(bool), true); // Enable native access (init the whole byte, rather than just first bit)
+				ResultProp = Prop;
+				break;
 			}
-			break;
-		case EAttributeBagPropertyType::Struct:
-			if (UScriptStruct* ScriptStruct = const_cast<UScriptStruct*>(Cast<UScriptStruct>(Desc.ValueTypeObject)))
+			case EAttributeBagPropertyType::Byte:
 			{
-				FStructProperty* Prop = new FStructProperty(PropertyScope, Desc.Name, RF_Public);
-				Prop->Struct = ScriptStruct;
-
-				if (ScriptStruct->GetCppStructOps() && ScriptStruct->GetCppStructOps()->HasGetTypeHash())
+				FByteProperty* Prop = new FByteProperty(PropertyScope, Desc.Name, RF_Public);
+				Prop->SetPropertyFlags(CPF_HasGetValueTypeHash);
+				ResultProp = Prop;
+				break;
+			}
+			case EAttributeBagPropertyType::Int32:
+			{
+				FIntProperty* Prop = new FIntProperty(PropertyScope, Desc.Name, RF_Public);
+				Prop->SetPropertyFlags(CPF_HasGetValueTypeHash);
+				ResultProp = Prop;
+				break;
+			}
+			case EAttributeBagPropertyType::Int64:
+			{
+				FInt64Property* Prop = new FInt64Property(PropertyScope, Desc.Name, RF_Public);
+				Prop->SetPropertyFlags(CPF_HasGetValueTypeHash);
+				ResultProp = Prop;
+				break;
+			}
+			case EAttributeBagPropertyType::Float:
+			{
+				FFloatProperty* Prop = new FFloatProperty(PropertyScope, Desc.Name, RF_Public);
+				Prop->SetPropertyFlags(CPF_HasGetValueTypeHash);
+				ResultProp = Prop;
+				break;
+			}
+			case EAttributeBagPropertyType::Double:
+			{
+				FDoubleProperty* Prop = new FDoubleProperty(PropertyScope, Desc.Name, RF_Public);
+				Prop->SetPropertyFlags(CPF_HasGetValueTypeHash);
+				ResultProp = Prop;
+				break;
+			}
+			case EAttributeBagPropertyType::Name:
+			{
+				FNameProperty* Prop = new FNameProperty(PropertyScope, Desc.Name, RF_Public);
+				Prop->SetPropertyFlags(CPF_HasGetValueTypeHash);
+				ResultProp = Prop;
+				break;
+			}
+			case EAttributeBagPropertyType::String:
+			{
+				FStrProperty* Prop = new FStrProperty(PropertyScope, Desc.Name, RF_Public);
+				Prop->SetPropertyFlags(CPF_HasGetValueTypeHash);
+				ResultProp = Prop;
+				break;
+			}
+			case EAttributeBagPropertyType::Text:
+			{
+				FTextProperty* Prop = new FTextProperty(PropertyScope, Desc.Name, RF_Public);
+				ResultProp = Prop;
+				break;
+			}
+			case EAttributeBagPropertyType::Enum:
+				if (UEnum* Enum = const_cast<UEnum*>(Cast<UEnum>(Desc.ValueTypeObject)))
 				{
+					FEnumProperty* Prop = new FEnumProperty(PropertyScope, Desc.Name, RF_Public);
+					FNumericProperty* UnderlyingProp = new FByteProperty(Prop, "UnderlyingType", RF_Public); // HACK: Hardwire to byte property for now for BP compatibility
+					Prop->SetEnum(Enum);
+					Prop->AddCppProperty(UnderlyingProp);
+					ResultProp = Prop;
+				}
+				break;
+			case EAttributeBagPropertyType::Struct:
+				if (UScriptStruct* ScriptStruct = const_cast<UScriptStruct*>(Cast<UScriptStruct>(Desc.ValueTypeObject)))
+				{
+					FStructProperty* Prop = new FStructProperty(PropertyScope, Desc.Name, RF_Public);
+					Prop->Struct = ScriptStruct;
+
+					if (ScriptStruct->GetCppStructOps() && ScriptStruct->GetCppStructOps()->HasGetTypeHash())
+					{
+						Prop->SetPropertyFlags(CPF_HasGetValueTypeHash);
+					}
+
+					if (ScriptStruct->StructFlags & STRUCT_HasInstancedReference)
+					{
+						Prop->SetPropertyFlags(CPF_ContainsInstancedReference);
+					}
+
+					ResultProp = Prop;
+				}
+				break;
+			case EAttributeBagPropertyType::Object:
+				if (UClass* Class = const_cast<UClass*>(Cast<UClass>(Desc.ValueTypeObject)))
+				{
+					FObjectProperty* Prop = new FObjectProperty(PropertyScope, Desc.Name, RF_Public);
+					if (Class->HasAnyClassFlags(CLASS_DefaultToInstanced))
+					{
+						Prop->SetPropertyFlags(CPF_InstancedReference);
+					}
+					Prop->SetPropertyClass(Class);
 					Prop->SetPropertyFlags(CPF_HasGetValueTypeHash);
+					ResultProp = Prop;
 				}
-
-				if (ScriptStruct->StructFlags & STRUCT_HasInstancedReference)
+				break;
+			case EAttributeBagPropertyType::SoftObject:
+				if (UClass* Class = const_cast<UClass*>(Cast<UClass>(Desc.ValueTypeObject)))
 				{
-					Prop->SetPropertyFlags(CPF_ContainsInstancedReference);
+					FSoftObjectProperty* Prop = new FSoftObjectProperty(PropertyScope, Desc.Name, RF_Public);
+					if (Class->HasAnyClassFlags(CLASS_DefaultToInstanced))
+					{
+						Prop->SetPropertyFlags(CPF_InstancedReference);
+					}
+					Prop->SetPropertyClass(Class);
+					Prop->SetPropertyFlags(CPF_HasGetValueTypeHash);
+					ResultProp = Prop;
 				}
-
-				return Prop;
-			}
-			break;
-		case EAttributeBagPropertyType::Object:
-			if (UClass* Class = const_cast<UClass*>(Cast<UClass>(Desc.ValueTypeObject)))
-			{
-				FObjectProperty* Prop = new FObjectProperty(PropertyScope, Desc.Name, RF_Public);
-				if (Class->HasAnyClassFlags(CLASS_DefaultToInstanced))
+				break;
+			case EAttributeBagPropertyType::Class:
+				if (UClass* Class = const_cast<UClass*>(Cast<UClass>(Desc.ValueTypeObject)))
 				{
-					Prop->SetPropertyFlags(CPF_InstancedReference);
+					FClassProperty* Prop = new FClassProperty(PropertyScope, Desc.Name, RF_Public);
+					Prop->SetMetaClass(Class);
+					Prop->PropertyClass = UClass::StaticClass();
+					Prop->SetPropertyFlags(CPF_HasGetValueTypeHash);
+					ResultProp = Prop;
 				}
-				Prop->SetPropertyClass(Class);
-				Prop->SetPropertyFlags(CPF_HasGetValueTypeHash);
-				return Prop;
-			}
-			break;
-		case EAttributeBagPropertyType::SoftObject:
-			if (UClass* Class = const_cast<UClass*>(Cast<UClass>(Desc.ValueTypeObject)))
-			{
-				FSoftObjectProperty* Prop = new FSoftObjectProperty(PropertyScope, Desc.Name, RF_Public);
-				if (Class->HasAnyClassFlags(CLASS_DefaultToInstanced))
+				break;
+			case EAttributeBagPropertyType::SoftClass:
+				if (UClass* Class = const_cast<UClass*>(Cast<UClass>(Desc.ValueTypeObject)))
 				{
-					Prop->SetPropertyFlags(CPF_InstancedReference);
+					FSoftClassProperty* Prop = new FSoftClassProperty(PropertyScope, Desc.Name, RF_Public);
+					Prop->SetMetaClass(Class);
+					Prop->PropertyClass = UClass::StaticClass();
+					Prop->SetPropertyFlags(CPF_HasGetValueTypeHash);
+					ResultProp = Prop;
 				}
-				Prop->SetPropertyClass(Class);
-				Prop->SetPropertyFlags(CPF_HasGetValueTypeHash);
-				return Prop;
+				break;
+			default:
+				ensureMsgf(false, TEXT("Unhandled stype %s"), *UEnum::GetValueAsString(Desc.ValueType));
 			}
-			break;
-		case EAttributeBagPropertyType::Class:
-			if (UClass* Class = const_cast<UClass*>(Cast<UClass>(Desc.ValueTypeObject)))
-			{
-				FClassProperty* Prop = new FClassProperty(PropertyScope, Desc.Name, RF_Public);
-				Prop->SetMetaClass(Class);
-				Prop->PropertyClass = UClass::StaticClass();
-				Prop->SetPropertyFlags(CPF_HasGetValueTypeHash);
-				return Prop;
-			}
-			break;
-		case EAttributeBagPropertyType::SoftClass:
-			if (UClass* Class = const_cast<UClass*>(Cast<UClass>(Desc.ValueTypeObject)))
-			{
-				FSoftClassProperty* Prop = new FSoftClassProperty(PropertyScope, Desc.Name, RF_Public);
-				Prop->SetMetaClass(Class);
-				Prop->PropertyClass = UClass::StaticClass();
-				Prop->SetPropertyFlags(CPF_HasGetValueTypeHash);
-				return Prop;
-			}
-			break;
-		default:
-			ensureMsgf(false, TEXT("Unhandled stype %s"), *UEnum::GetValueAsString(Desc.ValueType));
 		}
 
-		return nullptr;
+		if (ResultProp)
+		{
+			if (Desc.OffsetOverride >= 0)
+			{
+				UEProperty_Private::FProperty_DoNotUse::Unsafe_AlterOffset(*ResultProp, Desc.OffsetOverride);
+			}
+		}
+
+		return ResultProp;
 	}
 
 	// Helper functions to get and set property values
@@ -1256,6 +1277,8 @@ FAttributeBagPropertyDesc::FAttributeBagPropertyDesc(const FName InName, const F
 	// @todo : improve error handling - if we reach the nested containers limit, the Desc will be invalid (empty container types)
 	ContainerTypes = Attribute::StructUtils::GetContainerTypesFromProperty(InSourceProperty);
 
+	OffsetOverride = InSourceProperty->GetOffset_ForInternal();
+
 #if WITH_EDITORONLY_DATA
 	if (const TMap<FName, FString>* SourcePropertyMetaData = InSourceProperty->GetMetaDataMap())
 	{
@@ -1346,12 +1369,12 @@ bool FAttributeBagPropertyDesc::CompatibleType(const FAttributeBagPropertyDesc& 
 //----------------------------------------------------------------//
 //  UAttributeBagStruct
 //----------------------------------------------------------------//
-const UAttributeBagStruct* UAttributeBagStruct::GetOrCreateFromDescs(const TConstArrayView<FAttributeBagPropertyDesc> PropertyDescs)
+UAttributeBagStruct* UAttributeBagStruct::GetOrCreateFromDescs(const TConstArrayView<FAttributeBagPropertyDesc> PropertyDescs)
 {
 	const uint64 BagHash = Attribute::StructUtils::CalcPropertyDescArrayHash(PropertyDescs);
 	const FString ScriptStructName = FString::Printf(TEXT("AttributeBag_%llx"), BagHash);
 
-	if (const UAttributeBagStruct* ExistingBag = FindObject<UAttributeBagStruct>(GetTransientPackage(), *ScriptStructName))
+	if (UAttributeBagStruct* ExistingBag = FindObject<UAttributeBagStruct>(GetTransientPackage(), *ScriptStructName))
 	{
 		return ExistingBag;
 	}
@@ -1433,12 +1456,12 @@ const UAttributeBagStruct* UAttributeBagStruct::GetOrCreateFromDescs(const TCons
 	return NewBag;
 }
 
-const UAttributeBagStruct* UAttributeBagStruct::GetOrCreateFromScriptStruct(const UScriptStruct* ScriptStruct)
+UAttributeBagStruct* UAttributeBagStruct::GetOrCreateFromScriptStruct(const UScriptStruct* ScriptStruct)
 {
 	const uint64 BagHash = Attribute::StructUtils::GetObjectHash(ScriptStruct);
 	const FString ScriptStructName = FString::Printf(TEXT("AttributeBag_%llx"), BagHash);
 
-	if (const UAttributeBagStruct* ExistingBag = FindObject<UAttributeBagStruct>(GetTransientPackage(), *ScriptStructName))
+	if (UAttributeBagStruct* ExistingBag = FindObject<UAttributeBagStruct>(GetTransientPackage(), *ScriptStructName))
 	{
 		return ExistingBag;
 	}
@@ -1466,6 +1489,15 @@ const UAttributeBagStruct* UAttributeBagStruct::GetOrCreateFromScriptStruct(cons
 	}
 
 	return GetOrCreateFromDescs(PropertyDescs);
+}
+
+UAttributeBagStruct* UAttributeBagStruct::GetOrCreateFromScriptStruct_NoShrink(const UScriptStruct* ScriptStruct)
+{
+	UAttributeBagStruct* BagStruct = GetOrCreateFromScriptStruct(ScriptStruct);
+
+	BagStruct->SetPropertiesSize(ScriptStruct->GetPropertiesSize());
+
+	return BagStruct;
 }
 
 #if WITH_ENGINE && WITH_EDITOR

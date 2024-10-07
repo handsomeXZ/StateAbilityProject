@@ -77,16 +77,6 @@ struct FAttributeSimulatedTagFragment : public FAttributeNetTagFragment
 	GENERATED_BODY()
 };
 
-// Mass Fragment
-USTRUCT()
-struct FAttributeProviderFragment : public FMassFragment
-{
-	GENERATED_BODY()
-
-	UPROPERTY()
-	TArray<UObject*> Listeners;
-};
-
 USTRUCT()
 struct FAttributeNetFragment : public FMassFragment
 {
@@ -107,26 +97,6 @@ struct FAttributeNetSharedFragment : public FMassSharedFragment
 
 //////////////////////////////////////////////////////////////////////////
 
-UINTERFACE()
-class UAttributeListenerInterface : public UInterface
-{
-	GENERATED_BODY()
-};
-
-class IAttributeListenerInterface
-{
-	GENERATED_BODY()
-
-public:
-	virtual void OnDependencyChanged() {}
-
-	void Initialize(UWorld* World);
-	void Release(UObject* Owner);
-
-	FMassEntityHandle EntityHandle;
-	TWeakObjectPtr<UMassEntitySubsystem> EntitySubsystem;
-};
-
 USTRUCT()
 struct STATEABILITYSCRIPTRUNTIME_API FAttributeBag
 {
@@ -138,9 +108,9 @@ public:
 	FAttributeBag(const FAttributeBag& InOther);
 	FAttributeBag& operator=(const FAttributeBag& InOther);
 
-	virtual void MarkDirty(const FName Name) {}
-	virtual void MarkDirty(const int32 Index);
-	virtual void MarkAllDirty();
+	virtual void MarkDirty(const FName Name, bool bValueChanged = false) {}
+	virtual void MarkDirty(const int32 Index, bool bValueChanged = false);
+	virtual void MarkAllDirty(bool bValueChanged = false);
 	virtual void ClearDirty();
 	virtual const UScriptStruct* GetScriptStruct() const { return nullptr; }
 
@@ -164,6 +134,8 @@ struct STATEABILITYSCRIPTRUNTIME_API FAttributeEntityBag : public FAttributeBag
 {
 	GENERATED_BODY()
 public:
+	using Super::MarkDirty;
+
 	FAttributeEntityBag();
 	FAttributeEntityBag(const UScriptStruct* InDataStruct);
 
@@ -171,11 +143,12 @@ public:
 	FAttributeEntityBag& operator=(const FAttributeEntityBag& InOther);
 
 	virtual ~FAttributeEntityBag();
+	virtual void MarkDirty(const FName Name, bool bValueChanged = false) override;
 	virtual const UScriptStruct* GetScriptStruct() const override;
 	virtual int32 GetPropertyNum() const;
 	virtual bool IsDataValid() const;
+	virtual void Initialize(FAttributeEntityBuildParam& BuildParam);
 
-	void Initialize(FAttributeEntityBuildParam& BuildParam);
 	bool Serialize(FArchive& Ar);
 	bool NetDeltaSerialize(FNetDeltaSerializeInfo& deltaParms);
 
@@ -183,7 +156,10 @@ public:
 	uint8* GetMutableMemory();
 
 	template<typename T>
-	T& Get();
+	T& Get()
+	{
+		return AttributeEntity.Get<T>();
+	}
 protected:
 	virtual bool SerializeRead(FNetDeltaSerializeInfo& deltaParms);
 	virtual bool SerializeWrite(FNetDeltaSerializeInfo& deltaParms);
@@ -200,12 +176,6 @@ protected:
 	FAttributeEntity AttributeEntity;
 
 };
-
-template<typename T>
-T& FAttributeEntityBag::Get()
-{
-	return AttributeEntity.Get<T>();
-}
 
 template<>
 struct TStructOpsTypeTraits<FAttributeEntityBag> : public TStructOpsTypeTraitsBase2<FAttributeEntityBag>
@@ -225,17 +195,25 @@ struct STATEABILITYSCRIPTRUNTIME_API FAttributeDynamicBag : public FAttributeEnt
 {
 	GENERATED_BODY()
 public:
+	using Super::MarkDirty;
+
 	FAttributeDynamicBag();
+	FAttributeDynamicBag(const UScriptStruct* InDataStruct);
+
+	FAttributeDynamicBag(const FAttributeDynamicBag& InOther) : Super(InOther) {}
+	FAttributeDynamicBag& operator=(const FAttributeDynamicBag& InOther);
+
 	virtual ~FAttributeDynamicBag();
 
 	// void Initialize(FAttributeEntityBuildParam& BuildParam);
 
 	const FAttributeBagPropertyDesc* FindPropertyDescByIndex(int32 PropertyIndex) const;
 	const FAttributeBagPropertyDesc* FindPropertyDescByName(const FName Name) const;
-	void ResetDataStruct(const UAttributeBagStruct* NewBagStruct);
-	//////////////////////////////////////////////////////////////////////////
+	virtual void ResetDataStruct(const UAttributeBagStruct* NewBagStruct);
 
+	virtual void MarkDirty(const FName Name, bool bValueChanged = false) override;
 	virtual int32 GetPropertyNum() const override;
+	//////////////////////////////////////////////////////////////////////////
 
 	const UAttributeBagStruct* GetAttributeBagStruct() const;
 
@@ -259,20 +237,68 @@ template<> struct TStructOpsTypeTraits<FAttributeDynamicBag> : public TStructOps
 };
 
 
-//USTRUCT()
-//struct STATEABILITYSCRIPTRUNTIME_API FBagAttributeModelTestBase
-//{
-//	GENERATED_BODY()
-//public:
-//	virtual ~FBagAttributeModelTestBase() {}
-//};
-//
-//USTRUCT()
-//struct STATEABILITYSCRIPTRUNTIME_API FBagAttributeModelTest_OneAttribute : public FBagAttributeModelTestBase, public TReactiveModel<FBagAttributeModelTest_OneAttribute>
-//{
-//	GENERATED_BODY()
-//
-//public:
-//	REACTIVE_BODY(FBagAttributeModelTest_OneAttribute)
-//	REACTIVE_ATTRIBUTE(int32, Int32_Value)
-//};
+//////////////////////////////////////////////////////////////////////////
+
+USTRUCT()
+struct STATEABILITYSCRIPTRUNTIME_API FAttributeReactiveBag : public FAttributeDynamicBag
+{
+	GENERATED_BODY()
+public:
+	using Super::MarkDirty;
+
+	FAttributeReactiveBag();
+	//FAttributeReactiveBag(const UScriptStruct* InModelStruct); 不允许直接传ModelStruct，因为无法校验类型
+
+	FAttributeReactiveBag(const FAttributeReactiveBag& InOther);
+	FAttributeReactiveBag& operator=(const FAttributeReactiveBag& InOther);
+
+	virtual ~FAttributeReactiveBag() {}
+
+	virtual bool IsDataValid() const override;
+	virtual void Initialize(FAttributeEntityBuildParam& BuildParam) override;
+	virtual void MarkDirty(const int32 Index, bool bValueChanged = false) override;
+	virtual void MarkAllDirty(bool bValueChanged = false) override;
+	
+	template<typename TStruct>
+	void InitializeReactive();
+
+	bool Serialize(FArchive& Ar);
+	bool NetDeltaSerialize(FNetDeltaSerializeInfo& deltaParms);
+
+	const void* GetValueAddress(const FAttributeBagPropertyDesc* Desc) const;
+	void* GetMutableValueAddress(const FAttributeBagPropertyDesc* Desc);
+protected:
+	UScriptStruct* ModelStruct;
+
+	int32 CppPropCount;
+};
+
+template<> struct TStructOpsTypeTraits<FAttributeReactiveBag> : public TStructOpsTypeTraitsBase2<FAttributeReactiveBag>
+{
+	enum
+	{
+		WithSerializer = true,
+		WithNetDeltaSerializer = true,
+	};
+};
+
+template<typename TStruct>
+inline void FAttributeReactiveBag::InitializeReactive()
+{
+	static_assert(TIsDerivedFrom<TStruct, FReactiveModelBase>::IsDerived, "Must be initialized by a struct derived from FReactiveModelBase.");
+	static_assert(TIsDerivedFrom<TStruct, FMassFragment>::IsDerived, "Must be initialized by a struct derived from FMassFragment.");
+
+	ModelStruct = TStruct::StaticStruct();
+
+	DataStruct = UAttributeBagStruct::GetOrCreateFromScriptStruct_NoShrink(ModelStruct);
+	DataStruct->SetSuperStruct(FMassFragment::StaticStruct());
+
+	CppPropCount = FReactiveModelTypeTraitsBase<TStruct>::AttributeCountTotal;
+}
+
+USTRUCT()
+struct STATEABILITYSCRIPTRUNTIME_API FAttributeReactiveBagDataBase : public FMassFragment, public TReactiveModel<FAttributeReactiveBagDataBase>
+{
+	GENERATED_BODY()
+	REACTIVE_BODY(FAttributeReactiveBagDataBase);
+};

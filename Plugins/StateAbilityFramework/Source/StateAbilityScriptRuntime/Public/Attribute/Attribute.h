@@ -28,6 +28,7 @@ namespace Attribute
 		static const bool IsClass = std::is_same_v<decltype(Func1<JustT>(0)), UClass*>;
         static const bool IsClassOrStruct = !__is_union(JustT) && sizeof(Func2<JustT>(0)) - 1;
 		static const bool IsInterface = !std::is_same_v< char, decltype(Func3<JustT>(0)) > && !TIsDerivedFrom<JustT, UObject>::Value;
+		static const bool IsEnumClass = TIsEnumClass<T>::Value;
 	};
 
 
@@ -75,7 +76,6 @@ namespace Attribute
 		}
 	};
 
-
     /**
      * This class creates FProperty objects based on requested TValue.
      * Use UECodeGen_Private::FBytePropertyParams to constructe compiled in properties.
@@ -89,36 +89,20 @@ namespace Attribute
 
         static void AddProperty(FFieldVariant Scope, uint16 FieldOffset, const FName& PropName)
         {
+            static_assert(sizeof(TValue) != sizeof(TValue), "The current type does not support reflection!");
         }
     };
 
-#if ENGINE_MAJOR_VERSION >= 5
-
-#if ENGINE_MINOR_VERSION >= 3
 #define COMMON_PROPERTY_PARAMS(PropertyGenType, ...) \
             Scope, { TCHAR_TO_UTF8(*PropName.ToString()), nullptr, EPropertyFlags::CPF_None, UECodeGen_Private::EPropertyGenFlags:: PropertyGenType, EObjectFlags::RF_Transient, nullptr, nullptr, 1, ##__VA_ARGS__ }
-#else
-#define COMMON_PROPERTY_PARAMS(PropertyGenType, ...) \
-            Scope, { TCHAR_TO_UTF8(*PropName.ToString()), nullptr, EPropertyFlags::CPF_None, UECodeGen_Private::EPropertyGenFlags:: PropertyGenType, EObjectFlags::RF_Transient, 1, nullptr, nullptr, ##__VA_ARGS__ }
-#endif
+#define COMMON_PROPERTY_PARAMS_WITH_SCOPE(Scope, PropertyGenType, ...) \
+            Scope, { TCHAR_TO_UTF8(*PropName.ToString()), nullptr, EPropertyFlags::CPF_None, UECodeGen_Private::EPropertyGenFlags:: PropertyGenType, EObjectFlags::RF_Transient, nullptr, nullptr, 1, ##__VA_ARGS__ }
 
 #define DECLARE_SIMPLE_PROPERTY_INNER(PropertyType, PropertyGenType) \
         new PropertyType(COMMON_PROPERTY_PARAMS( PropertyGenType, FieldOffset ));
 
 #define DECLARE_WRAPPER_PROPERTY_INNER(PropertyType, PropertyGenType, InnerClass) \
         new PropertyType(COMMON_PROPERTY_PARAMS( PropertyGenType, FieldOffset, &InnerClass ));
-
-#else
-
-#define COMMON_PROPERTY_PARAMS(...)
-
-#define DECLARE_SIMPLE_PROPERTY_INNER(PropertyType, PropertyGenType) \
-        new PropertyType(Scope, PropName, EObjectFlags::RF_Transient, FieldOffset, EPropertyFlags::CPF_None);
-
-#define DECLARE_WRAPPER_PROPERTY_INNER(PropertyType, PropertyGenType, InnerClass) \
-        new PropertyType(Scope, PropName, EObjectFlags::RF_Transient, FieldOffset, EPropertyFlags::CPF_None, InnerClass());
-
-#endif
 
 #define DECLARE_SIMPLE_PROPERTY(VariableType, PropertyType, PropertyGenType) \
         template <> \
@@ -182,13 +166,23 @@ namespace Attribute
         static constexpr bool ContainsObjectReference = false;
         static void AddProperty(FFieldVariant Scope, uint16 FieldOffset, const FName& PropName)
         {
-#if ENGINE_MAJOR_VERSION >= 5
             new FBoolProperty(COMMON_PROPERTY_PARAMS(Bool, sizeof(bool), 0, nullptr));
-#else
-            new FBoolProperty(Scope, PropName, EObjectFlags::RF_NoFlags, FieldOffset, EPropertyFlags::CPF_None, 1, sizeof(bool), true);
-#endif
         }
     };
+
+	/* enum property */
+	template <typename TValue>
+	struct TPropertyFactory<TValue, typename TEnableIf<TIsEnumClass<TValue>::Value>::Type>
+	{
+		static constexpr bool IsSupportedByUnreal = true;
+		static constexpr bool ContainsObjectReference = true;
+
+		static void AddProperty(FFieldVariant Scope, uint16 FieldOffset, const FName& PropName)
+		{
+			auto Prop = new FEnumProperty(COMMON_PROPERTY_PARAMS(Enum, FieldOffset, &StaticEnum<TValue>));
+			new FByteProperty(COMMON_PROPERTY_PARAMS_WITH_SCOPE(Prop, Byte, FieldOffset, &StaticEnum<TValue>));
+		}
+	};
 
     /* UObject pointer */
     template <typename TValue>
@@ -203,7 +197,6 @@ namespace Attribute
         }
     };
 
-#if ENGINE_MAJOR_VERSION >= 5
     /* TObjectPtr<> pointer */
     template <typename TValue>
     struct TPropertyFactory<TObjectPtr<TValue>, typename TEnableIf<TValueTypeTraits<TValue>::IsClass>::Type>
@@ -216,7 +209,6 @@ namespace Attribute
             DECLARE_WRAPPER_PROPERTY_INNER(FObjectProperty, Object, TValue::StaticClass);
         }
     };
-#endif
 
     /* UStruct value */
     template <typename TValue>
@@ -240,11 +232,7 @@ namespace Attribute
 
         static void AddProperty(FFieldVariant Scope, uint16 FieldOffset, const FName& PropName)
         {
-#if ENGINE_MAJOR_VERSION >= 5
             auto Prop = new FArrayProperty(COMMON_PROPERTY_PARAMS(Array, FieldOffset, EArrayPropertyFlags::None));
-#else
-            auto Prop = new FArrayProperty(Scope, PropName, EObjectFlags::RF_NoFlags, FieldOffset, EPropertyFlags::CPF_None, EArrayPropertyFlags::None);
-#endif
             TPropertyFactory<TValue>::AddProperty(Prop, FieldOffset, FName(PropName.ToString() + TEXT("_ArrayValue")));
         }
     };
@@ -258,11 +246,7 @@ namespace Attribute
 
         static void AddProperty(FFieldVariant Scope, uint16 FieldOffset, const FName& PropName)
         {
-#if ENGINE_MAJOR_VERSION >= 5
             auto Prop = new FSetProperty(COMMON_PROPERTY_PARAMS(Set, FieldOffset));
-#else
-            auto Prop = new FSetProperty(Scope, PropName, EObjectFlags::RF_NoFlags, FieldOffset, EPropertyFlags::CPF_None);
-#endif
             TPropertyFactory<TValue>::AddProperty(Prop, FieldOffset, FName(PropName.ToString() + TEXT("_SetValue")));
         }
     };
@@ -283,11 +267,7 @@ namespace Attribute
             static_assert(!ContainsObjectReference || TPropertyFactory<TKey>::IsSupportedByUnreal, "Unsupported Key Type");
             static_assert(!ContainsObjectReference || TPropertyFactory<TValue>::IsSupportedByUnreal, "Unsupported Value Type");
 
-#if ENGINE_MAJOR_VERSION >= 5
             auto Prop = new FMapProperty(COMMON_PROPERTY_PARAMS(Map, FieldOffset, EMapPropertyFlags::None));
-#else
-            auto Prop = new FMapProperty(Scope, PropName, EObjectFlags::RF_NoFlags, FieldOffset, EPropertyFlags::CPF_None, EMapPropertyFlags::None);
-#endif
             TPropertyFactory<TKey>::AddProperty(Prop, 0, FName(PropName.ToString() + TEXT("_MapKey")));
             TPropertyFactory<TValue>::AddProperty(Prop, 1, FName(PropName.ToString() + TEXT("_MapValue")));
         }

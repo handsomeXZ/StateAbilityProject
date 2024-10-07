@@ -39,6 +39,7 @@ public class StateAbilityFrameworkTests : ModuleRules
 				"Slate",
 				"SlateCore",
                 "StateAbilityScriptRuntime",
+                "MassEntity",
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);

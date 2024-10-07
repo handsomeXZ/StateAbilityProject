@@ -694,7 +694,8 @@ void FAttributeDetailsNode::GenerateAttributeChildren(FAttributeBag& AttributeBa
 	}
 
 	FStructProperty* StructProperty = CastField<FStructProperty>(Property);
-	if (StructProperty && StructProperty->Struct->IsChildOf(FAttributeDynamicBag::StaticStruct()))
+
+	if (StructProperty && StructProperty->Struct->IsChildOf(FAttributeDynamicBag::StaticStruct()) && !StructProperty->FindMetaData(TEXT("NotDynamicAttributeBag")))
 	{
 		// 如果是DynamicBag，允许创建 AddWidget
 		SAssignNew(ValueOverride, SHorizontalBox)
@@ -852,7 +853,15 @@ void SAttributeDetailsView::SetObject(UObject* InSelection)
 		}
 	}
 
-	TreeViewWidget->RequestTreeRefresh();
+	TreeViewWidget->SetTreeItemsSource(&TreeRoots);
+
+	for (auto& Node : TreeRoots)
+	{
+		TreeViewWidget->SetItemExpansion(Node, true);
+	}
+
+	TreeViewWidget->ClearSelection();
+	TreeViewWidget->RebuildList();
 }
 
 void SAttributeDetailsView::UpdateDetails()
@@ -884,7 +893,7 @@ void SAttributeDetailsViewRow::Construct(const FArguments& InArgs, const TShared
 	TSharedPtr<FAttributeDetailsNode> OutermostNode = Node->GetOutermostNode();
 	FStructProperty* StructProperty = CastField<FStructProperty>(Node->Property);
 
-	bool bReadOnly = !(Attribute::IsScriptStruct<FAttributeDynamicBag>(OutermostNode->Property));
+	bool bReadOnly = !(Attribute::IsScriptStruct<FAttributeDynamicBag>(OutermostNode->Property)) || OutermostNode->Property->FindMetaData(TEXT("NotDynamicAttributeBag"));
 	bool bIsAttributeBag = StructProperty && StructProperty->Struct->IsChildOf(FAttributeBag::StaticStruct());
 
 	TWeakPtr<SAttributeDetailsViewRow> WeakViewRow = SharedThis(this).ToWeakPtr();

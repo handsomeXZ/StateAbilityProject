@@ -263,6 +263,26 @@ namespace Attribute::Reactive
 		return nullptr;
 	}
 
+	TConstArrayView<FReactiveRegistry::FAttributeReflection> FReactiveRegistry::GetPropertyOpsList(UClass* Class)
+	{
+		if (TArray<FAttributeReflection>* Properties = ClassProperties.Find(Class))
+		{
+			return *Properties;
+		}
+
+		return TConstArrayView<FAttributeReflection>();
+	}
+
+	TConstArrayView<FReactiveRegistry::FAttributeReflection> FReactiveRegistry::GetPropertyOpsList(UScriptStruct* Struct)
+	{
+		if (TArray<FAttributeReflection>* Properties = StructProperties.Find(Struct))
+		{
+			return *Properties;
+		}
+
+		return TConstArrayView<FAttributeReflection>();
+	}
+
 	void FReactiveRegistry::AssembleReferenceSchema(UClass* Class)
 	{
 		// We take only properties of current class, because AssembleTokenStream merges schemas with Super class

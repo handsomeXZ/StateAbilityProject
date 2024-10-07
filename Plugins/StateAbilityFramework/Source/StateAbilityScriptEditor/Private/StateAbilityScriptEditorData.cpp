@@ -255,31 +255,36 @@ void UStateAbilityScriptEditorData::RemoveOrphanedObjects()
 
 void UStateAbilityScriptEditorData::CollectAllNodeInstancesAndPersistObjects(TSet<UObject*>& NodeInstances)
 {
+	//TraverseGraphNodeRecursive(nullptr, Cast<UGraphAbilityNode>(StateTreeGraph->Nodes[0]), [this, &NodeInstances](UGraphAbilityNode* PrevGraphNode, UGraphAbilityNode* CurrentGraphNode) {
+	//});
 
-	TraverseGraphNodeRecursive(nullptr, Cast<UGraphAbilityNode>(StateTreeGraph->Nodes[0]), [this, &NodeInstances](UGraphAbilityNode* PrevGraphNode, UGraphAbilityNode* CurrentGraphNode) {
-		
-		NodeInstances.Add(CurrentGraphNode);
-		NodeInstances.Add(CurrentGraphNode->NodeInstance);
-
-		if (UGraphAbilityNode_State* GraphNode_State = Cast<UGraphAbilityNode_State>(CurrentGraphNode))
+	for (auto Node : StateTreeGraph->Nodes)
+	{
+		UGraphAbilityNode* CurrentGraphNode = Cast<UGraphAbilityNode>(Node);
+		if (CurrentGraphNode)
 		{
-			// 处理NetDeltas优化协议
-			// @TODO: 暂时没有处理好Attribute属性依赖关系图，所以暂时不优化State。
+			NodeInstances.Add(CurrentGraphNode);
+			NodeInstances.Add(CurrentGraphNode->NodeInstance);
 
-			UStateTreeStateNode* RootStateNode = GraphNode_State->GetRootStateNode();
-			TraverseStateTreeNodeRecursive(nullptr, RootStateNode, [this, &NodeInstances](UStateTreeBaseNode* PrevNode, UStateTreeBaseNode* CurrentNode) {
-				
-				NodeInstances.Add(CurrentNode);
-				if (CurrentNode->NodeType == EScriptStateTreeNodeType::State)
-				{
-					UStateTreeStateNode* CurStateNode = CastChecked<UStateTreeStateNode>(CurrentNode);
-					NodeInstances.Add(CurStateNode->StateInstance);
-				}
+			if (UGraphAbilityNode_State* GraphNode_State = Cast<UGraphAbilityNode_State>(CurrentGraphNode))
+			{
+				// 处理NetDeltas优化协议
+				// @TODO: 暂时没有处理好Attribute属性依赖关系图，所以暂时不优化State。
 
-			});
+				UStateTreeStateNode* RootStateNode = GraphNode_State->GetRootStateNode();
+				TraverseStateTreeNodeRecursive(nullptr, RootStateNode, [this, &NodeInstances](UStateTreeBaseNode* PrevNode, UStateTreeBaseNode* CurrentNode) {
+
+					NodeInstances.Add(CurrentNode);
+					if (CurrentNode->NodeType == EScriptStateTreeNodeType::State)
+					{
+						UStateTreeStateNode* CurStateNode = CastChecked<UStateTreeStateNode>(CurrentNode);
+						NodeInstances.Add(CurStateNode->StateInstance);
+					}
+
+				});
+			}
 		}
-
-	});
+	}
 }
 
 bool UStateAbilityScriptEditorData::CanRemoveNestedObject(UObject* TestObject)

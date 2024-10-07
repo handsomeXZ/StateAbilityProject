@@ -24,11 +24,12 @@ void UGraphAbilityNode::PostPlacedNewNode()
 		{
 			// 我们不再默认实例化，将是否实例化交由子类自己决定
 
-			// Redo / Undo
-			/*NodeInstance->SetFlags(RF_Transactional);*/
 			InitializeNode(MyGraph);
+
 			if (NodeInstance)
 			{
+				// Redo / Undo
+				NodeInstance->SetFlags(RF_Transactional);
 				NodeInstance->ClearFlags(RF_Transient);
 			}
 		}

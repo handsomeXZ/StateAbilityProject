@@ -30,9 +30,18 @@ void UGraphAbilityNode_State::AllocateDefaultPins()
 FText UGraphAbilityNode_State::GetNodeTitle(ENodeTitleType::Type TitleType) const
 {
 	UStateAbilityState* StateNode = Cast<UStateAbilityState>(NodeInstance);
-	if (IsValid(StateNode) && StateNode->DisplayName.ToString().Len() > 0)
+	if (IsValid(StateNode) && StateNode->DisplayName.ToString().Len() > 0 && StateNode->DisplayName != NAME_None)
 	{
 		return FText::FromName(StateNode->DisplayName);
+	}
+	else
+	{
+		static const FName NAME_DisplayName = "DisplayName";
+		const FString& DisplayName = GetNodeClass()->GetMetaData(NAME_DisplayName);
+		if (!DisplayName.IsEmpty())
+		{
+			return FText::FromString(DisplayName);
+		}
 	}
 
 	return FText::FromString(FName::NameToDisplayString(StateAbilityClassUtils::ClassToString(GetNodeClass()), false));

@@ -22,6 +22,7 @@ FGraphEditorApplicationMode::FGraphEditorApplicationMode(TSharedPtr<class FState
 	
 	STabFactories.RegisterFactory(MakeShareable(new FNodeGraphEditorSummoner(InEditor)));
 	STabFactories.RegisterFactory(MakeShareable(new FNodeGraphDetailsSummoner(InEditor)));
+	STabFactories.RegisterFactory(MakeShareable(new FStateTreeAttributeDetailsSummoner(InEditor)));
 
 	TabLayout = FTabManager::NewLayout("Standalone_StateAbilityNodeGraph_Layout_V0")
 		->AddArea
@@ -50,9 +51,14 @@ FGraphEditorApplicationMode::FGraphEditorApplicationMode(TSharedPtr<class FState
 					->Split
 					(
 						FTabManager::NewStack()
-						->SetSizeCoefficient(1.0f)
+						->SetSizeCoefficient(0.6f)
 						->AddTab(FStateAbilityEditor::ConfigVarsDetailsTab, ETabState::OpenedTab)
-						->SetHideTabWell(true)
+					)
+					->Split
+					(
+						FTabManager::NewStack()
+						->SetSizeCoefficient(0.4f)
+						->AddTab(FStateAbilityEditor::AttributeDetailsTab, ETabState::OpenedTab)
 					)
 				)
 			)
@@ -62,8 +68,7 @@ FGraphEditorApplicationMode::FGraphEditorApplicationMode(TSharedPtr<class FState
 	
 	InEditor->GetToolbarBuilder()->AddModesToolbar(ToolbarExtender);
 
-	// ToolbarExtender只要绑定一次，就交给StateTree绑定了
-	//InEditor->GetToolbarBuilder()->AddToolbar(ToolbarExtender);
+	InEditor->GetToolbarBuilder()->AddToolbar(ToolbarExtender);
 }
 
 void FGraphEditorApplicationMode::RegisterTabFactories(TSharedPtr<FTabManager> InTabManager)
@@ -141,7 +146,9 @@ FStateTreeEditorApplicationMode::FStateTreeEditorApplicationMode(TSharedPtr<clas
 		);
 
 	InEditor->GetToolbarBuilder()->AddModesToolbar(ToolbarExtender);
-	InEditor->GetToolbarBuilder()->AddToolbar(ToolbarExtender);
+
+	// ToolbarExtender只要绑定一次
+	// InEditor->GetToolbarBuilder()->AddToolbar(ToolbarExtender);
 }
 
 void FStateTreeEditorApplicationMode::RegisterTabFactories(TSharedPtr<FTabManager> InTabManager)

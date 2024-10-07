@@ -41,12 +41,11 @@ public:
 };
 
 // 特殊的Action，在运行时并不会包含任何数据，仅作为标记存在。
-UCLASS(BlueprintType, Blueprintable, meta = (DataStruct = "/Script/StateAbilityScriptRuntime.ConfigVars_EventSlot"))
+UCLASS(BlueprintType, Blueprintable)
 class STATEABILITYSCRIPTRUNTIME_API UStateAbilityEventSlot : public UStateAbilityNodeBase
 {
 	GENERATED_UCLASS_BODY()
 public:
-	UStateAbilityEventSlot();
 	const FGuid GetUID(UStateAbilityScript* InScript) const;
 
 #if WITH_EDITOR

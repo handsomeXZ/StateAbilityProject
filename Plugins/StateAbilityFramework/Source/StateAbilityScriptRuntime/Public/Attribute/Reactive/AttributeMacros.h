@@ -39,27 +39,26 @@
     TReactiveFieldClassInitialization<ThisFieldClass> InitializedFieldClass = TReactiveFieldClassInitialization<ThisFieldClass>(this)
 
 // creates common methods for property with provided Getter and Setter visibility
-#define REACTIVE_ATTRIBUTE_IMPL_PROP_2(ValueType, Name, GetterBody, SetterBody, FieldBody, GetterVisibility, SetterVisibility) \
+#define REACTIVE_ATTRIBUTE_IMPL_PROP_2(ValueType, Name, GetterVisibility, SetterVisibility) \
 GetterVisibility: \
-    typename Attribute::Reactive::TPropertyTypeSelector< PREPROCESSOR_REMOVE_OPTIONAL_PARENS(ValueType) >::GetterType Get##Name() GetterBody \
-    typename const Attribute::Reactive::TPropertyTypeSelector< PREPROCESSOR_REMOVE_OPTIONAL_PARENS(ValueType) >::GetterType Get##Name() const GetterBody \
+    typename Attribute::Reactive::TPropertyTypeSelector< PREPROCESSOR_REMOVE_OPTIONAL_PARENS(ValueType) >::GetterType Get##Name() REACTIVE_ATTRIBUTE_IMPL_PROP_GETTER(Name) \
+    typename const Attribute::Reactive::TPropertyTypeSelector< PREPROCESSOR_REMOVE_OPTIONAL_PARENS(ValueType) >::GetterType Get##Name() const REACTIVE_ATTRIBUTE_IMPL_PROP_GETTER(Name) \
 SetterVisibility: \
-    void Set##Name(typename Attribute::Reactive::TPropertyTypeSelector< PREPROCESSOR_REMOVE_OPTIONAL_PARENS(ValueType) >::SetterType InNewValue) \
-    SetterBody \
+    void Set##Name(typename Attribute::Reactive::TPropertyTypeSelector< PREPROCESSOR_REMOVE_OPTIONAL_PARENS(ValueType) >::SetterType InNewValue) REACTIVE_ATTRIBUTE_IMPL_PROP_SETTER(Name) \
 public: \
     typename Attribute::Reactive::TPropertyTypeSelector< PREPROCESSOR_REMOVE_OPTIONAL_PARENS(ValueType) >::GetterType Get##Name##_Effect() REACTIVE_ATTRIBUTE_IMPL_PROP_GETTER_EFFECT(Name) \
     typename const Attribute::Reactive::TPropertyTypeSelector< PREPROCESSOR_REMOVE_OPTIONAL_PARENS(ValueType) >::GetterType Get##Name##_Effect() const REACTIVE_ATTRIBUTE_IMPL_PROP_GETTER_EFFECT(Name) \
     REACTIVE_ATTRIBUTE_IMPL_REGISTER(ValueType, Name, &ThisFieldClass::Get##Name, &ThisFieldClass::Set##Name, &ThisFieldClass::Get##Name##_Effect, STRUCT_OFFSET(ThisFieldClass, Name##Field), GetterVisibility, SetterVisibility) \
 private: \
-    PREPROCESSOR_REMOVE_OPTIONAL_PARENS(FieldBody)
+    REACTIVE_ATTRIBUTE_IMPL_PROP_FIELD(ValueType, Name)
 
 // creates common methods for property with provided Setter visibility and default Getter visibility (public)
-#define REACTIVE_ATTRIBUTE_IMPL_PROP_1(ValueType, Name, GetterBody, SetterBody, FieldBody, SetterVisibility) \
-    REACTIVE_ATTRIBUTE_IMPL_PROP_2(ValueType, Name, GetterBody, SetterBody, FieldBody, public, SetterVisibility)
+#define REACTIVE_ATTRIBUTE_IMPL_PROP_1(ValueType, Name, SetterVisibility) \
+    REACTIVE_ATTRIBUTE_IMPL_PROP_2(ValueType, Name, public, SetterVisibility)
 
 // creates common methods for property with default Getter and Setter visibility (public, public)
-#define REACTIVE_ATTRIBUTE_IMPL_PROP_0(ValueType, Name, GetterBody, SetterBody, FieldBody) \
-    REACTIVE_ATTRIBUTE_IMPL_PROP_2(ValueType, Name, GetterBody, SetterBody, FieldBody, public, public)
+#define REACTIVE_ATTRIBUTE_IMPL_PROP_0(ValueType, Name) \
+    REACTIVE_ATTRIBUTE_IMPL_PROP_2(ValueType, Name, public, public)
 
 
 // creates body for automatic Getter method
@@ -102,7 +101,4 @@ private: \
  * Pass optional Getter and Setter visibility via VA_ARGS
  */
 #define REACTIVE_ATTRIBUTE(ValueType, Name, ... /* GetterVisibility, SetterVisibility */) \
-    INDIRECT_CALL( \
-        PREPROCESSOR_JOIN(REACTIVE_ATTRIBUTE_IMPL_PROP_, REACTIVE_NARGS(__VA_ARGS__)), \
-        (ValueType, Name, REACTIVE_ATTRIBUTE_IMPL_PROP_GETTER(Name), REACTIVE_ATTRIBUTE_IMPL_PROP_SETTER(Name), REACTIVE_ATTRIBUTE_IMPL_PROP_FIELD(ValueType, Name), ##__VA_ARGS__) \
-    )
+    INDIRECT_CALL( PREPROCESSOR_JOIN(REACTIVE_ATTRIBUTE_IMPL_PROP_, REACTIVE_NARGS(__VA_ARGS__)), (ValueType, Name, ##__VA_ARGS__) )

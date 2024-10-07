@@ -18,12 +18,12 @@ enum class EStateAbilityStateStage : uint8
 };
 
 USTRUCT()
-struct FAttribute_State : public FMassFragment
+struct FAttribute_State : public FAttributeReactiveBagDataBase
 {
 	GENERATED_BODY()
 
-	UPROPERTY()
-	EStateAbilityStateStage Stage;
+	REACTIVE_BODY(FAttribute_State);
+	REACTIVE_ATTRIBUTE(EStateAbilityStateStage, Stage);
 };
 
 UCLASS(Abstract)
@@ -34,6 +34,9 @@ public:
 	/* 生命周期不受父级State的控制 */
 	UPROPERTY(EditAnywhere, Category = "特殊", meta = (DisplayName = "持久的"))
 	bool bIsPersistent;
+
+	template<typename TStruct>
+	void InitializeAttribute();
 
 	void Initialize(FAttributeEntityBuildParam& BuildParam);
 	void Activate();
@@ -50,13 +53,12 @@ public:
 	
 	TConstArrayView<uint32> GetRelatedSubState() const { return RelatedSubState; }
 
-	FAttributeEntityBag& GetAttributeBag() { return AttributeBag; }
+	FAttributeReactiveBag& GetAttributeBag() { return AttributeBag; }
 	void MarkAllDirty() { AttributeBag.MarkAllDirty(); }
 
 protected:
-	UScriptStruct* AttributeStruct;
-	UPROPERTY()
-	FAttributeEntityBag AttributeBag;
+	UPROPERTY(meta = (NotDynamicAttributeBag))
+	FAttributeReactiveBag AttributeBag;
 private:
 	friend class UStateAbilityScriptEditorData;
 
@@ -70,3 +72,9 @@ private:
 	UPROPERTY()
 	TArray<uint32> RelatedSubState;
 };
+
+template<typename TStruct>
+inline void UStateAbilityState::InitializeAttribute()
+{
+	AttributeBag.InitializeReactive<TStruct>();
+}

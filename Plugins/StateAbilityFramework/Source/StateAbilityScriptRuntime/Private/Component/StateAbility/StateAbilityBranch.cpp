@@ -3,7 +3,7 @@
 UStateAbilityCondition::UStateAbilityCondition(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-
+	InitializeConfigVars<FConfigVars_Bool>();
 }
 
 void UStateAbilityCondition::OnExecute(FActionExecContext& Conext) const

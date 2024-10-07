@@ -32,7 +32,7 @@ public:
 	TMap<FName, FConfigVars_EventSlot> EventSlots;
 };
 
-USTRUCT()
+USTRUCT(meta = (Hidden))
 struct FConfigVars_Bool
 {
 	GENERATED_BODY()

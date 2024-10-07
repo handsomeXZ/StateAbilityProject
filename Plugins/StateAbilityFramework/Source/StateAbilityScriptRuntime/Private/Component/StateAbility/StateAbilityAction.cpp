@@ -41,6 +41,7 @@ UStateAbilityEventSlot::UStateAbilityEventSlot(const FObjectInitializer& ObjectI
 	: Super(ObjectInitializer)
 {
 	DisplayName = FName("Event");
+	InitializeConfigVars<FConfigVars_EventSlot>(true);
 }
 
 const FGuid UStateAbilityEventSlot::GetUID(UStateAbilityScript* InScript) const

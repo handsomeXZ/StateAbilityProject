@@ -6,7 +6,7 @@
 #include "MassEntityManager.h"
 #include "MassEntitySubsystem.h"
 
-struct FAttributeEntityBuildParam
+struct STATEABILITYSCRIPTRUNTIME_API FAttributeEntityBuildParam
 {
 	UWorld* World = nullptr;
 	TArray<const UScriptStruct*> ArchetypeFragment;

@@ -39,7 +39,8 @@ namespace Attribute::Reactive
 
 		static const FReactivePropertyOperations* FindPropertyOperations(UClass* Class, const FName& InPropertyName);
 		static const FReactivePropertyOperations* FindPropertyOperations(UScriptStruct* Struct, const FName& InPropertyName);
-
+		static TConstArrayView<FAttributeReflection> GetPropertyOpsList(UClass* Class);
+		static TConstArrayView<FAttributeReflection> GetPropertyOpsList(UScriptStruct* Struct);
 	protected:
 		template<typename TOwner, typename TValue>
 		static uint8 RegisterProperty_Internal(typename TReactiveProperty<TOwner, TValue>::FPropertyGetterPtr PropertyGetterPtr, FUnprocessedPropertyEntry& Entry);
@@ -95,9 +96,10 @@ namespace Attribute::Reactive
 		static uint8 RegisterProperty(typename TReactiveProperty<TOwner, TValue>::FPropertyGetterPtr PropertyGetterPtr)
 		{
 			++FReactiveModelTypeTraitsBase<TOwner>::AttributeCount;
+			++FReactiveModelTypeTraitsBase<TOwner>::AttributeCountTotal;
 
 			FReactiveRegistry::FUnprocessedPropertyEntry& Entry = FReactiveRegistry::GetUnprocessedClassProperties().AddDefaulted_GetRef();
-			Entry.GetFieldClass = (FReactiveRegistry::FFieldClassGetterPtr)&StaticClass<TOwner>;
+			Entry.GetFieldClass = (FReactiveRegistry::FFieldClassGetterPtr) &TOwner::StaticClass;
 
 			return FReactiveRegistry::RegisterProperty_Internal<TOwner, TValue>(PropertyGetterPtr, Entry);
 		}
@@ -109,9 +111,10 @@ namespace Attribute::Reactive
 		static uint8 RegisterProperty(typename TReactiveProperty<TOwner, TValue>::FPropertyGetterPtr PropertyGetterPtr)
 		{
 			++FReactiveModelTypeTraitsBase<TOwner>::AttributeCount;
+			++FReactiveModelTypeTraitsBase<TOwner>::AttributeCountTotal;
 
 			FReactiveRegistry::FUnprocessedPropertyEntry& Entry = FReactiveRegistry::GetUnprocessedStructProperties().AddDefaulted_GetRef();
-			Entry.GetFieldClass = (FReactiveRegistry::FFieldClassGetterPtr)&StaticStruct<TOwner>;
+			Entry.GetFieldClass = (FReactiveRegistry::FFieldClassGetterPtr) &TOwner::StaticStruct;
 
 			return FReactiveRegistry::RegisterProperty_Internal<TOwner, TValue>(PropertyGetterPtr, Entry);
 		}
@@ -122,9 +125,9 @@ namespace Attribute::Reactive
 	{
 		static uint8 RegisterFieldClass()
 		{
-			FReactiveModelTypeTraitsBase<TOwner>::AttributeCount += FReactiveModelTypeTraitsBase<TOwner::Super>::AttributeCount;
+			FReactiveModelTypeTraitsBase<TOwner>::AttributeCountTotal += FReactiveModelTypeTraitsBase<TOwner::Super>::AttributeCount;
 
-			FReactiveRegistry::GetUnprocessedClass().Add((FReactiveRegistry::FFieldClassGetterPtr)&StaticClass<TOwner>);
+			FReactiveRegistry::GetUnprocessedClass().Add((FReactiveRegistry::FFieldClassGetterPtr) &TOwner::StaticClass);
 
 			return 1;
 		}
@@ -139,9 +142,9 @@ namespace Attribute::Reactive
 	{
 		static uint8 RegisterFieldClass()
 		{
-			FReactiveModelTypeTraitsBase<TOwner>::AttributeCount += FReactiveModelTypeTraitsBase<TOwner::Super>::AttributeCount;
+			FReactiveModelTypeTraitsBase<TOwner>::AttributeCountTotal += FReactiveModelTypeTraitsBase<TOwner::Super>::AttributeCount;
 
-			FReactiveRegistry::GetUnprocessedStruct().Add((FReactiveRegistry::FFieldClassGetterPtr)&StaticStruct<TOwner>);
+			FReactiveRegistry::GetUnprocessedStruct().Add((FReactiveRegistry::FFieldClassGetterPtr) &TOwner::StaticStruct);
 
 			return 1;
 		}

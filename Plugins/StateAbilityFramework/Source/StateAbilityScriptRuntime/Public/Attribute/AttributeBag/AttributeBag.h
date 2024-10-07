@@ -313,11 +313,14 @@ struct STATEABILITYSCRIPTRUNTIME_API FAttributeBagPropertyDesc
 
 	/** Used as main identifier when copying values over. */
 	UPROPERTY(EditAnywhere, Category = "Default")
-	int32 Index;
+	int32 Index = -1;
 
 	/** Name for the property. */
 	UPROPERTY(EditAnywhere, Category = "Default")
-	FName Name;
+	FName Name = NAME_None;
+
+	UPROPERTY(EditAnywhere, Category = "Default")
+	int32 OffsetOverride = -1;
 
 	/** Type of the value described by this property. */
 	UPROPERTY(EditAnywhere, Category = "Default")
@@ -375,8 +378,9 @@ public:
 	 * Creates new UAttributeBagStruct struct based on the properties passed in.
 	 * If there are multiple properties that have the same name, only the first one is added.
 	 */
-	static const UAttributeBagStruct* GetOrCreateFromDescs(const TConstArrayView<FAttributeBagPropertyDesc> InPropertyDescs);
-	static const UAttributeBagStruct* GetOrCreateFromScriptStruct(const UScriptStruct* ScriptStruct);
+	static UAttributeBagStruct* GetOrCreateFromDescs(const TConstArrayView<FAttributeBagPropertyDesc> InPropertyDescs);
+	static UAttributeBagStruct* GetOrCreateFromScriptStruct(const UScriptStruct* ScriptStruct);
+	static UAttributeBagStruct* GetOrCreateFromScriptStruct_NoShrink(const UScriptStruct* ScriptStruct);
 
 	TConstArrayView<FAttributeBagPropertyDesc> GetPropertyDescs() const { return PropertyDescs; }
 	const FAttributeBagPropertyDesc* FindPropertyDescByIndex(const int32 Index) const;

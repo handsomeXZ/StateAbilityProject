@@ -320,14 +320,14 @@ bool FConfigVarsFilter::IsStructAllowed(const FStructViewerInitializationOptions
 		return bAllowUserDefinedStructs;
 	}
 
-	if (InStruct == BaseStruct)
-	{
-		return bAllowBaseStruct;
-	}
-
 	if (InStruct->HasMetaData(TEXT("Hidden")))
 	{
 		return false;
+	}
+
+	if (InStruct == BaseStruct)
+	{
+		return bAllowBaseStruct;
 	}
 
 	// Query the native struct to see if it has the correct parent type (if any)
@@ -472,19 +472,19 @@ void FConfigVarsViewModel::GenerateHeader(FDetailWidgetRow& HeaderRow)
 
 	OuterObject = OuterObjects[0];
 	
-	static const FName NAME_DataStruct = "DataStruct";
-	static const FName NAME_InheritedStruct = "InheritedDataStruct";
+	static const FName NAME_ConfigVarsStruct = "ConfigVarsStruct";
+	static const FName NAME_ExplicitConfigVarsStruct = "ExplicitConfigVarsStruct";
 
-	// DataStruct是否是明确的数据类型指向，如果不是，则允许FInstancedStruct一样的配置方式
-	bool bInheritedStruct = HasMetaData(NAME_InheritedStruct);
+	// ConfigVarsStruct是否是明确的数据类型指向，如果不是，则允许FInstancedStruct一样的配置方式
+	bool bExplicitDataStruct = HasMetaData(NAME_ExplicitConfigVarsStruct);
 
-	const FString& DataStructName = GetMetaData(NAME_DataStruct);
-	if (!DataStructName.IsEmpty())
+	const FString& ConfigVarsStructName = GetMetaData(NAME_ConfigVarsStruct);
+	if (!ConfigVarsStructName.IsEmpty())
 	{
-		DataStruct = UClass::TryFindTypeSlow<UScriptStruct>(DataStructName);
+		DataStruct = UClass::TryFindTypeSlow<UScriptStruct>(ConfigVarsStructName);
 		if (!DataStruct)
 		{
-			DataStruct = LoadObject<UScriptStruct>(nullptr, *DataStructName);
+			DataStruct = LoadObject<UScriptStruct>(nullptr, *ConfigVarsStructName);
 		}
 	}
 
@@ -506,7 +506,7 @@ void FConfigVarsViewModel::GenerateHeader(FDetailWidgetRow& HeaderRow)
 		return;
 	}
 
-	if (bInheritedStruct)
+	if (!bExplicitDataStruct)
 	{
 		HeaderRow
 		.NameContent()

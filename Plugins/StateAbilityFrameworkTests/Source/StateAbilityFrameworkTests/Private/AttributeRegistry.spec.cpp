@@ -285,20 +285,22 @@ void FAttributeModelSpec::Define()
 		{
 			int32 ExecCount = 0;
 
-			FAttributeBindEffect Effect = MakeEffect(ModelObject, [ModelObject = ModelObject, &ExecCount] {
+			FAttributeBindEffect Effect = MakeEffect(ModelObject, [ModelObject = ModelObject, &ExecCount, &Effect] {
 				if (IsValid(ModelObject))
 				{
+					Effect.UpdateDependencyBegin();
 					if (ExecCount < 1)
 					{
 						int32 Value = ModelObject->GetInt32Value_Effect();
 					}
 					ExecCount += 1;
+					Effect.UpdateDependencyEnd();
 				}
 			});
 
 			Effect.Run();						// +1
 
-			ModelObject->SetInt32Value(123);	// +1 and remove Int32Value's dependency (for ExecCount == 3)
+			ModelObject->SetInt32Value(123);	// +1 and remove Int32Value's dependency (for ExecCount == 1)
 			Effect.Run();						// +1
 			ModelObject->SetInt32Value(321);	// +0
 			TEST_BOOLEAN_("Reactive model data binding has executed and Dependency removed successfully.", ExecCount, 3);

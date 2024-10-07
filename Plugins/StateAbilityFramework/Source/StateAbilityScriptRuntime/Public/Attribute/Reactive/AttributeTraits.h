@@ -49,6 +49,7 @@ template<typename T>
 struct FReactiveModelTypeTraitsBase
 {
 	static inline int32 AttributeCount = 0;
+	static inline int32 AttributeCountTotal = 0;
 };
 
 
